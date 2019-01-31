@@ -8,7 +8,6 @@ from hiu_sac import HIUSAC
 # Add local files to path
 root_dir = Path.cwd()
 sys.path.append(str(root_dir))
-from networks import MultiPolicyNet, MultiQNet
 
 # Log and model saving parameters
 parser = argparse.ArgumentParser(description='Train Arguments')
@@ -21,7 +20,7 @@ parser.add_argument('--env', '-e', type=str, default='navigation2d',
 parser.add_argument('--log_dir', '-l', type=str, default=None,
                     help='Log directory [default: ./logs]')
 parser.add_argument('--iterations', '-i', type=int, default=100,
-                    help='Training iterations [default: 10]')
+                    help='Training iterations [default: 100]')
 parser.add_argument('--render', '-r', dest='render', default=False,
                     action='store_true',
                     help='Render environment during training [default: False]')
@@ -30,11 +29,6 @@ parser.add_argument('--gpu', type=int, default=-1,
 
 
 def get_environment(env_name, subtask=None, seed=610, render=False):
-    if env_name.lower() not in [
-        'navigation2d',
-        'reacher'
-    ]:
-        raise ValueError("Wrong environment name '%s'" % env_name)
     print("Loading environment %s" % env_name)
 
     if env_name.lower() == 'navigation2d':
@@ -42,8 +36,69 @@ def get_environment(env_name, subtask=None, seed=610, render=False):
     elif env_name.lower() == 'reacher':
         environment = envs.Reacher(subtask=subtask, seed=seed,
                                    render=render)
+    elif env_name.lower() == 'pusher':
+        environment = envs.Pusher(subtask=subtask, seed=seed,
+                                  render=render)
+    else:
+        raise ValueError("Wrong environment name '%s'" % env_name)
 
     return envs.NormalizedEnv(environment)
+
+
+def get_default_hiu_hyperparams(env_name):
+    if env_name.lower() == 'navigation2d':
+        algo_hyperparams = dict(
+            net_size=64,
+            use_q2=True,
+            explicit_vf=False,
+            train_rollouts=5,
+            eval_rollouts=3,
+            max_horizon=30,
+            fixed_horizon=True,
+            render=False,
+            gpu_id=-1,
+            seed=610,
+
+            batch_size=64,
+            replay_buffer_size=1e6,
+
+        )
+    elif env_name.lower() == 'reacher':
+        algo_hyperparams = dict(
+            net_size=128,
+            use_q2=True,
+            explicit_vf=False,
+            train_rollouts=3,
+            eval_rollouts=2,
+            max_horizon=1000,
+            fixed_horizon=True,
+            render=False,
+            gpu_id=-1,
+            seed=610,
+
+            batch_size=256,
+            replay_buffer_size=1e6,
+        )
+    elif env_name.lower() == 'pusher':
+        algo_hyperparams = dict(
+            net_size=128,
+            use_q2=True,
+            explicit_vf=False,
+            train_rollouts=1,
+            eval_rollouts=2,
+            max_horizon=1000,
+            fixed_horizon=True,
+            render=False,
+            gpu_id=-1,
+            seed=610,
+
+            batch_size=128,
+            replay_buffer_size=1e6,
+        )
+    else:
+        raise ValueError("Wrong environment name '%s'" % env_name)
+
+    return algo_hyperparams
 
 
 if __name__ == '__main__':
@@ -53,21 +108,16 @@ if __name__ == '__main__':
 
     env = get_environment(args.env, args.task, args.seed, args.render)
 
+    default_hyperparams = get_default_hiu_hyperparams(args.env)
+
+    # Replacing default hyperparameters
+    default_hyperparams['render'] = args.render
+    default_hyperparams['gpu_id'] = args.gpu
+    default_hyperparams['seed'] = args.seed
+
     algo = HIUSAC(
         env,
-        net_size=64,
-        use_q2=True,
-        explicit_vf=False,
-        train_rollouts=5,
-        eval_rollouts=3,
-        max_horizon=30,
-        fixed_horizon=True,
-        render=args.render,
-        gpu_id=args.gpu,
-        seed=args.seed,
-
-        batch_size=64,
-        replay_buffer_size=1e6,
+        **default_hyperparams
     )
 
     algo.train(args.iterations)

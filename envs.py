@@ -128,3 +128,37 @@ def Reacher(subtask=None, seed=610,
     )
 
     return Reacher2D3DofGoalCompoEnv(**env_params)
+
+
+def Pusher(subtask=None, seed=610,
+           sim_timestep=1e-3, frame_skip=10,
+           render=False):
+    from robolearn_gym_envs.pybullet import Pusher2D3DofGoalCompoEnv
+
+    env_params = dict(
+        is_render=render,
+        # obs_distances=False,
+        obs_distances=True,
+        obs_with_img=False,
+        # obs_with_ori=True,
+        obs_with_ori=False,
+        goal_pose=(0.65, 0.65),
+        rdn_goal_pose=True,
+        tgt_pose=(0.5, 0.25, 1.4660),
+        rdn_tgt_object_pose=True,
+        robot_config=None,
+        rdn_robot_config=True,
+        tgt_cost_weight=3.0,
+        goal_cost_weight=3.0,
+        ctrl_cost_weight=1.0e-3,
+        no_task_weight=1.0,
+        goal_tolerance=0.01,
+        # max_time=PATH_LENGTH*DT,
+        max_time=None,
+        sim_timestep=sim_timestep,
+        frame_skip=frame_skip,
+        subtask=subtask,
+        seed=seed,
+    )
+
+    return Pusher2D3DofGoalCompoEnv(**env_params)

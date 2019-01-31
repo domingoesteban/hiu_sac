@@ -751,9 +751,7 @@ class HIUSAC:
         pass
 
     def log(self):
-        # Save Pytorch models
-        self.save()
-
+        logger.log("Logging data in directory: %s" % self.log_dir)
         # Statistics dictionary
         statistics = OrderedDict()
 
@@ -800,7 +798,8 @@ class HIUSAC:
         else:
             logger.dump_tabular(with_prefix=False, with_timestamp=False,
                                 write_header=False)
-        logger.log("Logging directory: %s" % self.log_dir)
+        # Save Pytorch models
+        self.save()
         logger.log("----")
 
 
@@ -853,6 +852,8 @@ class MultiGoalReplayBuffer:
         self.rewards_buffer[self._top] = reward
         self.terminals_buffer[self._top] = terminal
         self.next_obs_buffer[self._top] = next_obs
+        print(rew_vector.shape)
+        input('fsadf')
         self.rew_vects_buffer[self._top] = rew_vector
         self.term_vects_buffer[self._top] = term_vector
         self._advance()

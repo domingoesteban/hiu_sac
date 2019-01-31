@@ -1,8 +1,60 @@
+import sys
 import os
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import pandas as pd
+import traceback
+
+
+def get_csv_data(csv_file, labels, space_separated=False):
+    data, all_labels = get_csv_data_and_labels(csv_file,
+                                               space_separated=space_separated)
+
+    for label in all_labels:
+        print(label)
+    print('***\n'*3)
+    n_data = data.shape[0]
+
+    new_data = np.zeros((len(labels), n_data))
+
+    # # Uncomment for debugging
+    # print(all_labels)
+
+    for ll, name in enumerate(labels):
+        if name in all_labels:
+            idx = all_labels.index(name)
+            try:
+                new_data[ll, :] = data[:, idx]
+            except Exception:
+                print(traceback.format_exc())
+                print("Error with data in %s" % csv_file)
+                sys.exit(1)
+        else:
+            raise ValueError("Label '%s' not available in file '%s'"
+                             % (name, csv_file))
+
+    return new_data
+
+
+def get_csv_data_and_labels(csv_file, space_separated=False):
+    # Read from CSV file
+    try:
+        if space_separated:
+            series = pd.read_csv(csv_file, delim_whitespace=True)
+        else:
+            series = pd.read_csv(csv_file)
+    except Exception:
+        print(traceback.format_exc())
+        print("Error reading %s" % csv_file)
+        sys.exit(1)
+
+    data = series.as_matrix()
+    labels = list(series)
+
+    return data, labels
+
 
 
 def set_latex_plot():
@@ -188,3 +240,92 @@ def plot_q_fcn(i_qf, i_qf2, u_qf, u_qf2, obs, policy):
             subgo_ax.set_xticklabels([])
 
     # plt.subplots_adjust(wspace=0, hspace=0)
+
+
+def get_csv_data(csv_file, labels, space_separated=False):
+    data, all_labels = get_csv_data_and_labels(csv_file,
+                                               space_separated=space_separated)
+
+    for label in all_labels:
+        print(label)
+    print('***\n'*3)
+    n_data = data.shape[0]
+
+    new_data = np.zeros((len(labels), n_data))
+
+    # # Uncomment for debugging
+    # print(all_labels)
+
+    for ll, name in enumerate(labels):
+        if name in all_labels:
+            idx = all_labels.index(name)
+            try:
+                new_data[ll, :] = data[:, idx]
+            except Exception:
+                print(traceback.format_exc())
+                print("Error with data in %s" % csv_file)
+                sys.exit(1)
+        else:
+            raise ValueError("Label '%s' not available in file '%s'"
+                             % (name, csv_file))
+
+    return new_data
+
+
+def get_csv_data_and_labels(csv_file, space_separated=False):
+    # Read from CSV file
+    try:
+        if space_separated:
+            series = pd.read_csv(csv_file, delim_whitespace=True)
+        else:
+            series = pd.read_csv(csv_file)
+    except Exception:
+        print(traceback.format_exc())
+        print("Error reading %s" % csv_file)
+        sys.exit(1)
+
+    data = series.as_matrix()
+    labels = list(series)
+
+    return data, labels
+
+
+def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
+    labels_to_plot = ['Test Returns Mean']
+
+    if num_intentions is None:
+        num_intentions = 0
+    else:
+        num_intentions += 1
+
+    # Add Intentional-Unintentional Label
+    new_labels = list()
+    for label in labels_to_plot:
+        for uu in range(num_intentions):
+            new_string = ('[U-%02d] ' % uu) + label
+            new_labels.append(new_string)
+
+        # Assuming the Main does not have a prefix
+        new_string = label
+        new_labels.append(new_string)
+
+    n_subplots = len(labels_to_plot) * (num_intentions + 1)
+
+    data = get_csv_data(csv_file, new_labels)
+
+    fig, axs = subplots(n_subplots)
+    if not isinstance(axs, np.ndarray):
+        axs = np.array([axs])
+    fig.subplots_adjust(hspace=0)
+    fig.suptitle('Average Return', fontweight='bold')
+
+    for aa, ax in enumerate(axs):
+        ax.plot(data[aa])
+        ax.set_ylabel(new_labels[aa])
+        plt.setp(ax.get_xticklabels(), visible=False)
+
+    axs[-1].set_xlabel('Episodes')
+    plt.setp(axs[-1].get_xticklabels(), visible=True)
+
+    print('total_iters:', len(data[-1]))
+    plt.show(block=block)
