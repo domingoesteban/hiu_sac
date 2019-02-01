@@ -114,12 +114,13 @@ if __name__ == '__main__':
     default_hyperparams['render'] = args.render
     default_hyperparams['gpu_id'] = args.gpu
     default_hyperparams['seed'] = args.seed
+    default_hyperparams['total_iterations'] = args.iterations
 
     algo = HIUSAC(
         env,
         **default_hyperparams
     )
 
-    algo.train(args.iterations)
+    algo.train(init_iteration=0)
 
     input('Press a key to close the script...')

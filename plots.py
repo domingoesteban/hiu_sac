@@ -1,6 +1,7 @@
 import sys
 import os
 import numpy as np
+import torch
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -54,7 +55,6 @@ def get_csv_data_and_labels(csv_file, space_separated=False):
     labels = list(series)
 
     return data, labels
-
 
 
 def set_latex_plot():
@@ -176,7 +176,8 @@ def plot_q_fcn(i_qf, i_qf2, u_qf, u_qf2, obs, policy):
 
         all_axs = np.atleast_1d(all_axs)
 
-        all_axs[0].set_title('Main Task', fontdict={'fontsize': 30, 'fontweight': 'medium'})
+        all_axs[0].set_title('Main Task',
+                             fontdict={'fontsize': 30, 'fontweight': 'medium'})
         q_vals = i_qf.get_values(all_obs, all_acts)[0]
         if i_qf2 is not None:
             q2_vals = i_qf2.get_values(all_obs, all_acts)[0]
@@ -208,7 +209,8 @@ def plot_q_fcn(i_qf, i_qf2, u_qf, u_qf2, obs, policy):
 
         for aa in range(n_unintentions):
             subgo_ax = all_axs[aa + 1]
-            subgo_ax.set_title('Sub-Task %02d' % (aa+1), fontdict={'fontsize': 30, 'fontweight': 'medium'} )
+            subgo_ax.set_title('Sub-Task %02d' % (aa+1),
+                               fontdict={'fontsize': 30, 'fontweight': 'medium'} )
 
             q_vals = u_qf.get_values(all_obs, all_acts, val_idxs=[aa])[0]
             q_vals = q_vals[0]
@@ -238,6 +240,9 @@ def plot_q_fcn(i_qf, i_qf2, u_qf, u_qf2, obs, policy):
 
             subgo_ax.get_yaxis().set_visible(False)
             subgo_ax.set_xticklabels([])
+
+        all_axs[0].set_xticklabels([])
+        all_axs[0].set_yticklabels([])
 
     # plt.subplots_adjust(wspace=0, hspace=0)
 
@@ -329,3 +334,64 @@ def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
 
     print('total_iters:', len(data[-1]))
     plt.show(block=block)
+
+
+def plot_q_values(qf, policy=None, obs=None, action_dims=(0, 1), delta=0.05,
+                  device='cpu'):
+
+    # Values Plots
+    ob = [-2., -2]
+    num_intentions = 2
+
+    action_dim_x = action_dims[0]
+    action_dim_y = action_dims[1]
+
+    x_min = env.action_space.low[action_dim_x]
+    y_min = env.action_space.low[action_dim_y]
+    x_max = env.action_space.high[action_dim_x]
+    y_max = env.action_space.high[action_dim_y]
+
+    all_x = torch.arange(x_min, x_max, delta)
+    all_y = torch.arange(y_min, y_max, delta)
+    xy_mesh = torch.meshgrid(all_x, all_y)
+
+    all_acts = torch.zeros((len(all_x)*len(all_y), 2))
+    all_acts[:, 0] = xy_mesh[0].contiguous().view(-1)
+    all_acts[:, 1] = xy_mesh[1].contiguous().view(-1)
+
+    fig, all_axs = \
+        subplots(1, num_intentions + 1,
+                 gridspec_kw={'wspace': 0, 'hspace': 0},
+                 )
+    # fig.suptitle('Q-val Observation: ' + str(ob))
+    fig.tight_layout()
+    fig.canvas.set_window_title('q_vals_%1d_%1d' % (ob[0], ob[1]))
+
+    all_axs = np.atleast_1d(all_axs)
+
+    all_axs[-1].set_title('Main Task',
+                          fontdict={'fontsize': 30, 'fontweight': 'medium'})
+
+    all_obs = torch.tensor(obs, dtype=torch.float32, device=device)
+    all_obs = all_obs.unsqueeze(0).expand_as(all_acts)
+
+    q_vals = qf(all_obs, all_acts)
+    for intention in range(num_intentions + 1):
+        ax = all_axs[intention]
+        plot_contours(ax, q_vals[:, intention, :].cpu().data.numpy(),
+                      x_min, x_max, y_min, y_max, delta=delta)
+
+        # Plot action samples
+        #
+        # x, y = actions[:, 0], actions[:, 1]
+        # ax.scatter(x, y, c='b', marker='*', zorder=5)
+        # ax.set_xlim(xlim)
+        # ax.set_ylim(ylim)
+
+        if intention < num_intentions:
+            ax.set_title('Sub-Task %02d' % (intention+1),
+                         fontdict={'fontsize': 30,
+                                   'fontweight': 'medium'}
+                         )
+
+    plt.show()

@@ -52,43 +52,15 @@ def plot_progress(progress_file):
     plots.plot_intentions_eval_returns(progress_file)
 
 
-def eval_policy(env, models_directory, task=None, seed=610, gpu_id=-1):
-    import time
-    use_gpu = args.gpu > 0
-    global torch_device
-    torch_device = torch.device("cuda:" + str(args.gpu) if use_gpu
-                                else "cpu")
-    env = get_environment(args.env, args.task, args.seed, render=True)
+def eval_policy(env_name, models_directory, task=None, seed=610, gpu_id=-1):
+    env = get_environment(env_name, args.task, args.seed, render=True)
     # Get Policy
     policy_file = osp.join(models_directory, 'policy.pt')
     policy = torch.load(policy_file)
 
     while True:
-        rollout(env, policy, max_horizon=1000)
-        # obs = env.reset()
-        # obs = torch.as_tensor(obs, dtype=torch.float32,
-        #                       device=device)
-        # print("New rollout")
-        # accum_reward = 0
-        # for step in range(1000):
-        #     start_time = time.time()
-        #     interaction_info = interaction(
-        #         env, policy, obs,
-        #         render=True, device=device,
-        #         intention=0, deterministic=True,
-        #     )
-        #     elapsed_time = time.time() - start_time
-        #     if elapsed_time > 0.1:
-        #         input('wuuu')
-        #
-        #     # obs = interaction_info['next_obs']
-        #     # accum_reward += interaction_info['reward'].item()
-        #     #
-        #     # if interaction_info['done']:
-        #     #     print("Environment done!")
-        #     #     break
-
-        # print('Accumulated reward:', accum_reward)
+        input("Press a key to sample from the environment")
+        rollout(env, policy.cpu(), max_horizon=1000, device='cpu')
 
 
 if __name__ == '__main__':

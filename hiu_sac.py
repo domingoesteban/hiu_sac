@@ -28,7 +28,8 @@ class HIUSAC:
             use_q2=True,
             explicit_vf=False,
 
-            # RL Algo behavior
+            # RL algorithm behavior
+            total_iterations=10,
             train_rollouts=10,
             eval_rollouts=10,
             max_horizon=50,
@@ -48,6 +49,7 @@ class HIUSAC:
             discount=0.99,
 
             # Optimization
+            optimization_steps=1,
             optimizer='adam',
             optimizer_kwargs=None,
             policy_lr=3e-4,
@@ -81,6 +83,7 @@ class HIUSAC:
 
         self.obs_dim = env.obs_dim
         self.action_dim = env.action_dim
+        self.total_iterations = total_iterations
         self.train_rollouts = train_rollouts
         self.eval_rollouts = eval_rollouts
         self.max_horizon = max_horizon
@@ -224,7 +227,6 @@ class HIUSAC:
         self.num_train_steps = 0
         self.num_train_interactions = 0
         self.num_eval_interactions = 0
-        self.num_total_interactions = 0
         self.num_iters = 0
 
         # ###### #
@@ -252,6 +254,7 @@ class HIUSAC:
         # ########## #
         # Optimizers #
         # ########## #
+        self.optimization_steps = optimization_steps
         if optimizer.lower() == 'adam':
             optimizer_class = torch.optim.Adam
             if optimizer_kwargs is None:
@@ -309,13 +312,13 @@ class HIUSAC:
             self.eval_rollouts, self.num_intentions + 1, self.max_horizon
         ))
 
-    def train(self, num_iterations=20):
+    def train(self, init_iteration=0):
 
         gt.reset()
         gt.set_def_unique(False)
 
         for iter in gt.timed_for(
-                range(num_iterations),
+                range(self.total_iterations),
                 save_itrs=True,
         ):
             for rollout in range(self.train_rollouts):
@@ -331,13 +334,29 @@ class HIUSAC:
                     gt.stamp('sample')
 
                     # Get useful info from interaction
-                    next_obs = torch_ify(interaction_info['next_obs'])
+                    next_obs = torch_ify(
+                        interaction_info['next_obs'],
+                        device=torch_device, dtype=torch.float32
+                    )
                     action = interaction_info['action']
-                    reward = torch_ify(interaction_info['reward'])
-                    done = torch_ify(interaction_info['done'])
-                    reward_vector = torch_ify(interaction_info['reward_vector'])
-                    done_vector = torch_ify(interaction_info['done_vector'])
+                    reward = torch_ify(
+                        interaction_info['reward'],
+                        device=torch_device, dtype=torch.float32
+                    )
+                    done = torch_ify(
+                        interaction_info['done'],
+                        device=torch_device, dtype=torch.float32
+                    )
+                    reward_vector = torch_ify(
+                        interaction_info['reward_vector'],
+                        device=torch_device, dtype=torch.float32
+                    )
+                    done_vector = torch_ify(
+                        interaction_info['done_vector'],
+                        device=torch_device, dtype=torch.float32
+                    )
 
+                    # Add data to replay_buffer
                     self.replay_buffer.add_sample(obs,
                                                   action.detach(),
                                                   reward,
@@ -349,19 +368,23 @@ class HIUSAC:
 
                     # Only train when there are enough samples from buffer
                     if self.replay_buffer.available_samples() > self.batch_size:
-                        learn_iters = 1
-                        for ii in range(learn_iters):
+                        for ii in range(self.optimization_steps):
                             self.learn()
                     gt.stamp('train')
 
                     # Reset environment if it is done
                     if done:
                         obs = self.env.reset()
-                        obs = torch_ify(obs, device=torch_device, dtype=torch.float32)
+                        obs = torch_ify(obs, device=torch_device,
+                                        dtype=torch.float32)
+                    else:
+                        obs = next_obs
 
             self.eval()
 
             self.log()
+
+            self.num_iters += 1
 
     def eval(self):
         for rr in range(self.eval_rollouts):
@@ -379,78 +402,10 @@ class HIUSAC:
                     rollout_info['reward'][step]
                 self.log_eval_rewards[rr, :self.num_intentions, step] = \
                     rollout_info['reward_vector'][step]
-
         gt.stamp('eval')
 
-        self.num_iters += 1
-
-        # import matplotlib.pyplot as plt
-        # from plots import subplots
-        # from plots import plot_contours
-        #
-        # # Values Plots
-        # ob = [-2., -2]
-        # delta = 0.05
-        # action_dim_x = 0
-        # action_dim_y = 1
-        # x_min = self.env.action_space.low[action_dim_x]
-        # y_min = self.env.action_space.low[action_dim_y]
-        # x_max = self.env.action_space.high[action_dim_x]
-        # y_max = self.env.action_space.high[action_dim_y]
-        #
-        # all_x = torch.arange(x_min, x_max, delta)
-        # all_y = torch.arange(y_min, y_max, delta)
-        # xy_mesh = torch.meshgrid(all_x, all_y)
-        #
-        # all_acts = torch.zeros((len(all_x)*len(all_y), 2))
-        # all_acts[:, 0] = xy_mesh[0].contiguous().view(-1)
-        # all_acts[:, 1] = xy_mesh[1].contiguous().view(-1)
-        #
-        # fig, all_axs = \
-        #     subplots(1, self.num_intentions + 1,
-        #              gridspec_kw={'wspace': 0, 'hspace': 0},
-        #              )
-        # # fig.suptitle('Q-val Observation: ' + str(ob))
-        # fig.tight_layout()
-        # fig.canvas.set_window_title('q_vals_%1d_%1d' % (ob[0], ob[1]))
-        #
-        # all_axs = np.atleast_1d(all_axs)
-        #
-        # all_axs[-1].set_title('Main Task', fontdict={'fontsize': 30, 'fontweight': 'medium'})
-        #
-        # all_obs = torch.tensor(obs, dtype=torch.float32, device=torch_device)
-        # all_obs = all_obs.unsqueeze(0).expand_as(all_acts)
-        #
-        # q_vals = self.qf1(all_obs, all_acts)
-        # for intention in range(self.num_intentions + 1):
-        #     ax = all_axs[intention]
-        #     plot_contours(ax, q_vals[:, intention, :].cpu().data.numpy(),
-        #                   x_min, x_max, y_min, y_max, delta=delta)
-        #
-        #     if intention < self.num_intentions:
-        #         ax.set_title('Sub-Task %02d' % (intention+1),
-        #                      fontdict={'fontsize': 30,
-        #                                'fontweight': 'medium'}
-        #                      )
-        #
-        # # fig, ax = subplots(1, 1)
-        # # ax.plot(self.log_values_errors)
-        # # ax.set_title('Values error')
-        # # eval_returns = np.array(self.log_eval_rewards)
-        # #
-        # # fig, all_axs = subplots(self.num_intentions + 1, 1)
-        # # for intention in range(self.num_intentions + 1):
-        # #     ax = all_axs[intention]
-        # #     ax.plot(eval_returns[:, intention])
-        # #     if intention < self.num_intentions:
-        # #         ax_title = 'Subtask %02d' % (intention + 1)
-        # #     else:
-        # #         ax_title = 'Main Task'
-        # #     ax.set_title(ax_title)
-        #
-        # plt.show()
-
     def learn(self):
+        # Get batch from the replay buffer
         batch = self.replay_buffer.random_batch(self.batch_size)
 
         # Get common data from batch
