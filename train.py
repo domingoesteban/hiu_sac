@@ -51,7 +51,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=64,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=200,
+            total_iterations=50,
             train_rollouts=5,
             eval_rollouts=3,
             max_horizon=30,
