@@ -6,6 +6,8 @@ import torch
 
 import envs
 from hiu_sac import HIUSAC
+from utils import interaction
+from utils import rollout
 import plots
 
 # Add local files to path
@@ -51,7 +53,7 @@ def plot_progress(progress_file):
 
 
 def eval_policy(env, models_directory, task=None, seed=610, gpu_id=-1):
-
+    import time
     use_gpu = args.gpu > 0
     global torch_device
     torch_device = torch.device("cuda:" + str(args.gpu) if use_gpu
@@ -62,27 +64,31 @@ def eval_policy(env, models_directory, task=None, seed=610, gpu_id=-1):
     policy = torch.load(policy_file)
 
     while True:
-        obs = env.reset()
-        obs = torch.as_tensor(obs, dtype=torch.float32,
-                              device=torch_device)
-        print("New rollout")
-        accum_reward = 0
-        for step in range(1000):
-            action, pol_info = policy(obs[None], intention=0, deterministic=True)
-            env_action = action[0, :].cpu().data.numpy()
-            next_obs, rew, done, info = env.step(env_action)
+        rollout(env, policy, max_horizon=1000)
+        # obs = env.reset()
+        # obs = torch.as_tensor(obs, dtype=torch.float32,
+        #                       device=device)
+        # print("New rollout")
+        # accum_reward = 0
+        # for step in range(1000):
+        #     start_time = time.time()
+        #     interaction_info = interaction(
+        #         env, policy, obs,
+        #         render=True, device=device,
+        #         intention=0, deterministic=True,
+        #     )
+        #     elapsed_time = time.time() - start_time
+        #     if elapsed_time > 0.1:
+        #         input('wuuu')
+        #
+        #     # obs = interaction_info['next_obs']
+        #     # accum_reward += interaction_info['reward'].item()
+        #     #
+        #     # if interaction_info['done']:
+        #     #     print("Environment done!")
+        #     #     break
 
-            next_obs = torch.as_tensor(next_obs, dtype=torch.float32,
-                                       device=torch_device)
-
-            accum_reward += rew
-            obs = next_obs
-
-            if done:
-                print("Environment done!")
-                break
-
-        print('Accumulated reward:', accum_reward)
+        # print('Accumulated reward:', accum_reward)
 
 
 if __name__ == '__main__':
@@ -97,9 +103,9 @@ if __name__ == '__main__':
     plot_progress(progress_file)
 
     # Evaluate policy in the environment
-    test_policy = False
+    # test_policy = False
+    test_policy = True
     if test_policy:
-
         models_dir = osp.join(log_dir, 'models', 'last_itr')
         eval_policy(args.env, models_dir, args.task, args.seed, args.gpu)
 

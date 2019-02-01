@@ -248,9 +248,12 @@ class MultiPolicyNet(torch.nn.Module):
         self.shared_non_linear = get_non_linear_op(self.shared_non_linear_name)
         self.combination_method = combination_method
 
+        # self.noise_loc = torch.nn.Parameter()
+        self.register_buffer('noise_loc', torch.zeros(action_dim, dtype=torch.float32))
+        self.register_buffer('noise_scale', torch.ones(action_dim, dtype=torch.float32))
         self.noise_dist = torch.distributions.Normal(
-            loc=torch.zeros(action_dim, dtype=torch.float32),
-            scale=torch.ones(action_dim, dtype=torch.float32)
+            loc=self.noise_loc,
+            scale=self.noise_scale,
         )
 
         self._pols_idxs = torch.arange(self.num_intentions)
@@ -426,6 +429,11 @@ class MultiPolicyNet(torch.nn.Module):
         pol_info['activation_weights'] = activation_weights
 
         return action, pol_info
+
+    def cuda(self, *args, **kwargs):
+        super(MultiPolicyNet, self).cuda(*args, **kwargs)
+        self.noise_dist.loc = self.noise_loc
+        self.noise_dist.scale = self.noise_scale
 
 
 def get_non_linear_op(name):

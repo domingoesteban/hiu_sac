@@ -7,6 +7,13 @@ import logger.logger as logger
 from collections import OrderedDict
 import gtimer as gt
 
+from utils import (
+rollout,
+np_ify,
+torch_ify,
+interaction
+)
+
 # MAX_LOG_ALPHA = 9.21034037  # Alpha=10000  Before 01/07
 MAX_LOG_ALPHA = 6.2146080984  # Alpha=500  From 09/07
 
@@ -58,7 +65,7 @@ class HIUSAC:
             log_dir=None,
 
     ):
-        self.use_gpu = gpu_id > 0
+        self.use_gpu = gpu_id >= 0
         global torch_device
         torch_device = torch.device("cuda:" + str(gpu_id) if self.use_gpu
                                     else "cpu")
@@ -198,6 +205,12 @@ class HIUSAC:
                 self.qf2.cuda(torch_device)
             if self.vf is not None:
                 self.vf.cuda(torch_device)
+            if self.target_qf1 is not None:
+                self.target_qf1.cuda(torch_device)
+            if self.target_qf2 is not None:
+                self.target_qf2.cuda(torch_device)
+            if self.target_vf is not None:
+                self.target_vf.cuda(torch_device)
 
         # Replay Buffer
         self.replay_buffer = MultiGoalReplayBuffer(
@@ -209,8 +222,9 @@ class HIUSAC:
         self.batch_size = batch_size
 
         self.num_train_steps = 0
-        self.num_eval_steps = 0
-        self.num_total_steps = 0
+        self.num_train_interactions = 0
+        self.num_eval_interactions = 0
+        self.num_total_interactions = 0
         self.num_iters = 0
 
         # ###### #
@@ -306,13 +320,34 @@ class HIUSAC:
         ):
             for rollout in range(self.train_rollouts):
                 obs = self.env.reset()
-                obs = torch.as_tensor(obs, dtype=torch.float32,
-                                      device=torch_device)
+                obs = torch_ify(obs, device=torch_device, dtype=torch.float32)
                 for step in range(self.max_horizon):
-                    obs, info = self.interaction(obs, training=True, intention=None)
+                    interaction_info = interaction(
+                        self.env, self.policy, obs,
+                        render=self.render, device=torch_device,
+                        intention=None, deterministic=False,
+                    )
+                    self.num_train_interactions += 1
                     gt.stamp('sample')
 
-                    # Only train when there are anough samples from buffer
+                    # Get useful info from interaction
+                    next_obs = torch_ify(interaction_info['next_obs'])
+                    action = interaction_info['action']
+                    reward = torch_ify(interaction_info['reward'])
+                    done = torch_ify(interaction_info['done'])
+                    reward_vector = torch_ify(interaction_info['reward_vector'])
+                    done_vector = torch_ify(interaction_info['done_vector'])
+
+                    self.replay_buffer.add_sample(obs,
+                                                  action.detach(),
+                                                  reward,
+                                                  done,
+                                                  next_obs,
+                                                  reward_vector,
+                                                  done_vector
+                                                  )
+
+                    # Only train when there are enough samples from buffer
                     if self.replay_buffer.available_samples() > self.batch_size:
                         learn_iters = 1
                         for ii in range(learn_iters):
@@ -320,26 +355,31 @@ class HIUSAC:
                     gt.stamp('train')
 
                     # Reset environment if it is done
-                    if info['done']:
+                    if done:
                         obs = self.env.reset()
-                        obs = torch.as_tensor(obs, dtype=torch.float32,
-                                              device=torch_device)
+                        obs = torch_ify(obs, device=torch_device, dtype=torch.float32)
 
             self.eval()
 
             self.log()
 
     def eval(self):
-        for rollout in range(self.eval_rollouts):
-            obs = self.env.reset()
-            obs = torch.as_tensor(obs, dtype=torch.float32,
-                                  device=torch_device)
-            for step in range(self.max_horizon):
-                obs, info = self.interaction(obs, training=False, intention=None)
-                reward = info['reward']
-                reward_vector = info['reward_vector']
-                self.log_eval_rewards[rollout, :self.num_intentions, step] = reward_vector
-                self.log_eval_rewards[rollout, -1, step] = reward
+        for rr in range(self.eval_rollouts):
+            rollout_info = rollout(self.env, self.policy,
+                                   max_horizon=self.max_horizon,
+                                   fixed_horizon=self.fixed_horizon,
+                                   render=self.render,
+                                   return_info=True,
+                                   device=torch_device,
+                                   deterministic=True,
+                                   intention=None)
+
+            for step in range(len(rollout_info['reward'])):
+                self.log_eval_rewards[rr, -1, step] = \
+                    rollout_info['reward'][step]
+                self.log_eval_rewards[rr, :self.num_intentions, step] = \
+                    rollout_info['reward_vector'][step]
+
         gt.stamp('eval')
 
         self.num_iters += 1
@@ -455,7 +495,9 @@ class HIUSAC:
                                                  max=MAX_LOG_ALPHA).exp()
         alphas.unsqueeze_(dim=-1)
 
-        intention_mask = torch.eye(self.num_intentions + 1).unsqueeze(-1)
+        intention_mask = torch.eye(self.num_intentions + 1,
+                                   dtype=torch.float32, device=torch_device
+                                   ).unsqueeze(-1)
 
         hiu_obs = obs.unsqueeze(-2).expand(
             self.batch_size, self.num_intentions + 1, self.obs_dim
@@ -496,10 +538,9 @@ class HIUSAC:
 
         hiu_new_q = torch.sum(hiu_new_q*next_q_intention_mask, dim=-2)
 
-        # Policy KL loss: - (E_a[Q(s, a) + H(.)])
-
         policy_prior_log_probs = 0.0  # Uniform prior  # TODO: Normal prior
 
+        # Policy KL loss: - (E_a[Q(s, a) + H(.)])
         hiu_new_log_pi = torch.cat(
             (u_new_log_pi, i_new_log_pi.unsqueeze(-2)),
             dim=-2
@@ -622,67 +663,8 @@ class HIUSAC:
                     tau=self.soft_target_tau
                 )
 
-    def interaction(self, obs, training=True, intention=None):
-
-        if self.render:
-            self.env.render()
-
-        action, pol_info = self.policy(obs[None],
-                                       deterministic=not training,
-                                       intention=intention,
-                                       )
-        env_action = action[0, :].cpu().data.numpy()
-        next_obs, reward, done, env_info = \
-            self.env.step(env_action)
-
-        next_obs = torch.as_tensor(next_obs, dtype=torch.float32,
-                                   device=torch_device)
-
-        # TODO: Environments should return np.array
-        reward_vector = np.array(env_info['reward_multigoal'])
-
-        done = done.astype(float)
-        done_vector = np.array(env_info['terminal_multigoal']).astype(np.float32)
-
-        if training:
-            # If training add to replay buffer
-            done = torch.as_tensor(done, dtype=torch.float32,
-                                   device=torch_device)
-            done_vector = torch.as_tensor(done_vector,
-                dtype=torch.float32, device=torch_device
-            )
-
-            reward = torch.as_tensor(reward, dtype=torch.float32,
-                                     device=torch_device)
-            reward_vector = torch.as_tensor(reward_vector,
-                                            dtype=torch.float32,
-                                            device=torch_device
-            )
-
-            self.replay_buffer.add_sample(obs,
-                                          action.detach(),
-                                          reward,
-                                          done,
-                                          next_obs,
-                                          reward_vector,
-                                          done_vector
-                                          )
-
-        # Internal counters
-        if training:
-            self.num_train_steps += 1
-        else:
-            self.num_eval_steps += 1
-        self.num_total_steps += 1
-
-        interaction_info = dict(
-            reward=reward,
-            reward_vector=reward_vector,
-            done=done,
-            done_vector=done_vector,
-        )
-
-        return next_obs, interaction_info
+        # Increase internal counter
+        self.num_train_steps += 1
 
     def save(self):
         snapshot_gap = logger.get_snapshot_gap()
@@ -756,7 +738,7 @@ class HIUSAC:
         statistics = OrderedDict()
 
         statistics["Iteration"] = self.num_iters
-        statistics["Accumulated Training Steps"] = self.num_train_steps
+        statistics["Accumulated Training Steps"] = self.num_train_interactions
 
         # Training Stats to plot
         statistics["Total Policy Error"] = self.log_policies_error
@@ -852,8 +834,6 @@ class MultiGoalReplayBuffer:
         self.rewards_buffer[self._top] = reward
         self.terminals_buffer[self._top] = terminal
         self.next_obs_buffer[self._top] = next_obs
-        print(rew_vector.shape)
-        input('fsadf')
         self.rew_vects_buffer[self._top] = rew_vector
         self.term_vects_buffer[self._top] = term_vector
         self._advance()
