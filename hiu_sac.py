@@ -62,6 +62,7 @@ class HIUSAC:
             i_entropy_scale=1.,
             u_entropy_scale=None,
             max_alpha=10,
+            min_alpha=0.1,
             # auto_alpha=True,
             auto_alpha=False,
             i_tgt_entro=None,
@@ -252,6 +253,7 @@ class HIUSAC:
                                        device=torch_device)
         self._auto_alphas = auto_alpha
         self.max_alpha = max_alpha
+        self.min_alpha = min_alpha
         self.log_alphas = torch.zeros(self.num_intentions+1,
                                       device=torch_device,
                                       requires_grad=True)
@@ -603,7 +605,8 @@ class HIUSAC:
             self._alphas_optimizer.zero_grad()
             alphas_loss.backward()
             self._alphas_optimizer.step()
-            self.log_alphas.data.clamp_(min=0, max=math.log(self.max_alpha))
+            self.log_alphas.data.clamp_(min=math.log(self.max_alpha),
+                                        max=math.log(self.max_alpha))
 
         # Soft Update of Target Value Functions
         if self.num_train_steps % self.target_update_interval == 0:
