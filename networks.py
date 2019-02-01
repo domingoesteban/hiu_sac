@@ -2,7 +2,9 @@ import torch
 import math
 
 LOG_SIG_MAX = 2
-LOG_SIG_MIN = -20
+# LOG_SIG_MIN = -20
+LOG_SIG_MIN = -6.907755  # SIGMA 0.001
+EPS = 1e-8
 
 
 class Intention(torch.nn.Module):
@@ -350,10 +352,12 @@ class MultiPolicyNet(torch.nn.Module):
         # It is not efficient to calculate log_std, stds, and variances with
         # the deterministic option but it is easier to organize everything
         log_stds = torch.cat(log_stds, dim=-2)
-
-        log_stds = torch.tanh(log_stds)
-        log_stds = \
-            LOG_SIG_MIN + 0.5 * (LOG_SIG_MAX - LOG_SIG_MIN)*(log_stds + 1)
+        # # Method 1:
+        # log_stds = torch.tanh(log_stds)
+        # log_stds = \
+        #     LOG_SIG_MIN + 0.5 * (LOG_SIG_MAX - LOG_SIG_MIN)*(log_stds + 1)
+        # Methods 2:
+        log_stds = torch.clamp(log_stds, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
 
         stds = log_stds.exp()
         variances = stds**2
@@ -394,16 +398,21 @@ class MultiPolicyNet(torch.nn.Module):
             actions_vect = means
         else:
             # Sample from Gaussian distribution
-            noise = self.noise_dist.sample((batch_size,))
+            # noise = self.noise_dist.sample((batch_size,))
+            # actions_vect = stds*noise.unsqueeze(1) + means
+            # action = std*noise + mean
+            # actions_vect = stds*torch.randn_like(stds) + means
+            # action = std*torch.randn_like(std) + mean
+            noise = torch.randn_like(std)
             actions_vect = stds*noise.unsqueeze(1) + means
             action = std*noise + mean
 
             if log_prob:
-                log_probs = -0.5*(((actions_vect - means) / stds)**2
+                log_probs = -0.5*(((actions_vect - means) / (stds + EPS))**2
                                   + 2*log_stds + math.log(2*math.pi))
                 log_probs = log_probs.sum(dim=-1, keepdim=True)
 
-                real_log_prob = -0.5*(((action - mean) / std)**2
+                real_log_prob = -0.5*(((action - mean) / (std + EPS))**2
                                       + 2*log_std + math.log(2*math.pi))
                 real_log_prob = real_log_prob.sum(dim=-1, keepdim=True)
 
@@ -427,6 +436,12 @@ class MultiPolicyNet(torch.nn.Module):
         pol_info['log_probs'] = log_probs
         pol_info['log_prob'] = real_log_prob
         pol_info['activation_weights'] = activation_weights
+        pol_info['means'] = means
+        pol_info['mean'] = mean
+        pol_info['log_stds'] = log_stds
+        pol_info['log_std'] = log_std
+        pol_info['stds'] = stds
+        pol_info['std'] = std
 
         return action, pol_info
 
@@ -434,6 +449,12 @@ class MultiPolicyNet(torch.nn.Module):
         super(MultiPolicyNet, self).cuda(*args, **kwargs)
         self.noise_dist.loc = self.noise_loc
         self.noise_dist.scale = self.noise_scale
+
+    def cpu(self):
+        fcn_output = super(MultiPolicyNet, self).cpu()
+        self.noise_dist.loc = self.noise_loc
+        self.noise_dist.scale = self.noise_scale
+        return fcn_output
 
 
 def get_non_linear_op(name):

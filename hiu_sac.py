@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+import math
 from networks import MultiPolicyNet, MultiQNet, MultiVNet
 from itertools import chain
 import logger.logger as logger
@@ -60,7 +61,9 @@ class HIUSAC:
             # Entropy
             i_entropy_scale=1.,
             u_entropy_scale=None,
-            auto_alpha=True,
+            max_alpha=10,
+            # auto_alpha=True,
+            auto_alpha=False,
             i_tgt_entro=None,
             u_tgt_entros=None,
 
@@ -103,8 +106,10 @@ class HIUSAC:
             shared_sizes=(net_size,),
             intention_sizes=(net_size, net_size),
             shared_non_linear='relu',
+            # shared_non_linear='elu',
             shared_batch_norm=False,
             intention_non_linear='relu',
+            # intention_non_linear='elu',
             intention_final_non_linear='linear',
             intention_batch_norm=False,
         )
@@ -245,8 +250,8 @@ class HIUSAC:
         self.tgt_entros = torch.tensor(u_tgt_entros + [i_tgt_entro],
                                        dtype=torch.float32,
                                        device=torch_device)
-
         self._auto_alphas = auto_alpha
+        self.max_alpha = max_alpha
         self.log_alphas = torch.zeros(self.num_intentions+1,
                                       device=torch_device,
                                       requires_grad=True)
@@ -446,8 +451,10 @@ class HIUSAC:
         u_next_log_pi = policy_info['log_probs'][self.batch_size:].detach()
 
         # Alphas
-        alphas = self.entropy_scales*torch.clamp(self.log_alphas,
-                                                 max=MAX_LOG_ALPHA).exp()
+        # alphas = self.entropy_scales*torch.clamp(self.log_alphas,
+        #                                          max=MAX_LOG_ALPHA).exp()
+        alphas = self.entropy_scales*torch.clamp(self.log_alphas.exp(),
+                                                 max=self.max_alpha)
         alphas.unsqueeze_(dim=-1)
 
         intention_mask = torch.eye(self.num_intentions + 1,
@@ -480,27 +487,26 @@ class HIUSAC:
             dim=-2
         )
 
+        hiu_new_log_pi = torch.cat(
+            (u_new_log_pi, i_new_log_pi.unsqueeze(-2)),
+            dim=-2
+        )
+
         # ####################### #
         # Policy Improvement Step #
         # ####################### #
 
         hiu_new_q1 = self.qf1(hiu_obs, hiu_new_actions)
 
-        # TODO: Decide if use the minimum
+        # TODO: Decide if use the minimum btw q1 and q2. Using new_q1 for now
         hiu_new_q = hiu_new_q1
 
         next_q_intention_mask = intention_mask.expand_as(hiu_new_q)
-
         hiu_new_q = torch.sum(hiu_new_q*next_q_intention_mask, dim=-2)
 
         policy_prior_log_probs = 0.0  # Uniform prior  # TODO: Normal prior
 
         # Policy KL loss: - (E_a[Q(s, a) + H(.)])
-        hiu_new_log_pi = torch.cat(
-            (u_new_log_pi, i_new_log_pi.unsqueeze(-2)),
-            dim=-2
-        )
-
         policy_kl_loss = -torch.mean(
             hiu_new_q - alphas*hiu_new_log_pi
             + policy_prior_log_probs
@@ -588,14 +594,16 @@ class HIUSAC:
         self.log_values_error = values_loss.item()
 
         if self._auto_alphas:
-            log_alphas = torch.clamp(self.log_alphas, max=MAX_LOG_ALPHA)
-            alphas_loss = - (log_alphas *
+            # NOTE: In formula is alphas and not log_alphas
+            # log_alphas = self.log_alphas.clamp(max=MAX_LOG_ALPHA)
+            alphas_loss = - (self.log_alphas *
                              (hiu_new_log_pi.squeeze(-1) + self.tgt_entros
                               ).detach()
                              ).mean()
             self._alphas_optimizer.zero_grad()
             alphas_loss.backward()
             self._alphas_optimizer.step()
+            self.log_alphas.data.clamp_(min=0, max=math.log(self.max_alpha))
 
         # Soft Update of Target Value Functions
         if self.num_train_steps % self.target_update_interval == 0:
@@ -670,7 +678,7 @@ class HIUSAC:
             return
 
         for save_path in models_dirs:
-            logger.log('Saving models to %s' % save_full_path)
+            # logger.log('Saving models to %s' % save_full_path)
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             torch.save(self.policy, save_path + '/policy.pt')
@@ -698,6 +706,11 @@ class HIUSAC:
         # Training Stats to plot
         statistics["Total Policy Error"] = self.log_policies_error
         statistics["Total Value Error"] = self.log_values_error
+        for intention in range(self.num_intentions):
+            statistics["Alpha [U-%02d]" % intention] = \
+                self.log_alphas[intention].exp().detach().cpu().numpy()
+        statistics["Alpha"] = \
+            self.log_alphas[-1].exp().detach().cpu().numpy()
 
         # Evaluation Stats to plot
         statistics["Test Rewards Mean"] = \

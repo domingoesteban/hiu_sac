@@ -27,8 +27,8 @@ def interaction(env, policy, obs, device='cpu', **pol_kwargs):
     return interaction_info
 
 
-def rollout(env, policy, max_horizon=100,
-            fixed_horizon=False, render=False, return_info=False,
+def rollout(env, policy, max_horizon=100, fixed_horizon=False,
+            render=False, return_info=False,
             device='cpu',
             **pol_kwargs):
 

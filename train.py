@@ -19,8 +19,8 @@ parser.add_argument('--env', '-e', type=str, default='navigation2d',
                     help='Name of environment [default: navigation2d]')
 parser.add_argument('--log_dir', '-l', type=str, default=None,
                     help='Log directory [default: ./logs]')
-parser.add_argument('--iterations', '-i', type=int, default=100,
-                    help='Training iterations [default: 100]')
+parser.add_argument('--iterations', '-i', type=int, default=None,
+                    help='Training iterations [default: None (recommended iters)]')
 parser.add_argument('--render', '-r', dest='render', default=False,
                     action='store_true',
                     help='Render environment during training [default: False]')
@@ -51,6 +51,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=64,
             use_q2=True,
             explicit_vf=False,
+            total_iterations=200,
             train_rollouts=5,
             eval_rollouts=3,
             max_horizon=30,
@@ -68,6 +69,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
+            total_iterations=200,
             train_rollouts=3,
             eval_rollouts=2,
             max_horizon=1000,
@@ -84,6 +86,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
+            total_iterations=200,
             train_rollouts=1,
             eval_rollouts=2,
             max_horizon=1000,
@@ -114,7 +117,8 @@ if __name__ == '__main__':
     default_hyperparams['render'] = args.render
     default_hyperparams['gpu_id'] = args.gpu
     default_hyperparams['seed'] = args.seed
-    default_hyperparams['total_iterations'] = args.iterations
+    if args.iterations is not None:
+        default_hyperparams['total_iterations'] = args.iterations
 
     algo = HIUSAC(
         env,
@@ -123,4 +127,5 @@ if __name__ == '__main__':
 
     algo.train(init_iteration=0)
 
-    input('Press a key to close the script...')
+    print("Closing the script. Bye!")
+

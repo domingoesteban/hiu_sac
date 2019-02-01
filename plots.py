@@ -336,20 +336,64 @@ def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
     plt.show(block=block)
 
 
-def plot_q_values(qf, policy=None, obs=None, action_dims=(0, 1), delta=0.05,
-                  device='cpu'):
+def plot_intentions_info(csv_file, num_intentions=None, block=False):
+    labels_to_plot = ['Alpha']
 
+    if num_intentions is None:
+        num_intentions = 0
+    else:
+        num_intentions += 1
+
+    # Add Intentional-Unintentional Label
+    new_labels = list()
+    for label in labels_to_plot:
+        for uu in range(num_intentions):
+            new_string = label + ('[U-%02d] ' % uu)
+            print(new_string)
+            input('fdsaf')
+            new_labels.append(new_string)
+
+        # Assuming the Main does not have a prefix
+        new_string = label
+        new_labels.append(new_string)
+
+    n_subplots = len(labels_to_plot) * (num_intentions + 1)
+
+    data = get_csv_data(csv_file, new_labels)
+
+    fig, axs = subplots(n_subplots)
+    if not isinstance(axs, np.ndarray):
+        axs = np.array([axs])
+    fig.subplots_adjust(hspace=0)
+    fig.suptitle('Alpha', fontweight='bold')
+
+    for aa, ax in enumerate(axs):
+        ax.plot(data[aa])
+        ax.set_ylabel(new_labels[aa])
+        plt.setp(ax.get_xticklabels(), visible=False)
+
+    axs[-1].set_xlabel('Episodes')
+    plt.setp(axs[-1].get_xticklabels(), visible=True)
+
+    print('total_iters:', len(data[-1]))
+    plt.show(block=block)
+
+
+def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
+                  obs_dims=(0, 1), action_dims=(0, 1), delta=0.05,
+                  device='cpu'):
     # Values Plots
-    ob = [-2., -2]
     num_intentions = 2
 
     action_dim_x = action_dims[0]
     action_dim_y = action_dims[1]
+    obs_dim_x = obs_dims[0]
+    obs_dim_y = obs_dims[1]
 
-    x_min = env.action_space.low[action_dim_x]
-    y_min = env.action_space.low[action_dim_y]
-    x_max = env.action_space.high[action_dim_x]
-    y_max = env.action_space.high[action_dim_y]
+    x_min = action_lower[action_dim_x]
+    y_min = action_lower[action_dim_y]
+    x_max = action_higher[action_dim_x]
+    y_max = action_higher[action_dim_y]
 
     all_x = torch.arange(x_min, x_max, delta)
     all_y = torch.arange(y_min, y_max, delta)
@@ -365,7 +409,8 @@ def plot_q_values(qf, policy=None, obs=None, action_dims=(0, 1), delta=0.05,
                  )
     # fig.suptitle('Q-val Observation: ' + str(ob))
     fig.tight_layout()
-    fig.canvas.set_window_title('q_vals_%1d_%1d' % (ob[0], ob[1]))
+    fig.canvas.set_window_title('q_vals_%1d_%1d' %
+                                (obs[obs_dim_x], obs[obs_dim_y]))
 
     all_axs = np.atleast_1d(all_axs)
 
@@ -376,17 +421,33 @@ def plot_q_values(qf, policy=None, obs=None, action_dims=(0, 1), delta=0.05,
     all_obs = all_obs.unsqueeze(0).expand_as(all_acts)
 
     q_vals = qf(all_obs, all_acts)
+
+    if policy is not None:
+        n_samples = 50
+        torch_obs = torch.tensor(obs, dtype=torch.float32, device=device)
+        torch_obs = torch_obs.expand(n_samples, -1)
+        actions, pol_info = policy(torch_obs,
+                                   deterministic=False,
+                                   intention=None)
+        actions = actions.detach().numpy()
+        intention_actions = pol_info['action_vect'].detach().numpy()
+
     for intention in range(num_intentions + 1):
         ax = all_axs[intention]
         plot_contours(ax, q_vals[:, intention, :].cpu().data.numpy(),
                       x_min, x_max, y_min, y_max, delta=delta)
 
-        # Plot action samples
-        #
-        # x, y = actions[:, 0], actions[:, 1]
-        # ax.scatter(x, y, c='b', marker='*', zorder=5)
-        # ax.set_xlim(xlim)
-        # ax.set_ylim(ylim)
+        ax.set_xlim(x_min)
+        ax.set_ylim(y_min)
+
+        if policy is not None:
+            if intention < num_intentions:
+                x = intention_actions[:, intention, action_dim_x]
+                y = intention_actions[:, intention, action_dim_y]
+            else:
+                x = actions[:, action_dim_x]
+                y = actions[:, action_dim_y]
+            ax.scatter(x, y, c='b', marker='*', zorder=5)
 
         if intention < num_intentions:
             ax.set_title('Sub-Task %02d' % (intention+1),

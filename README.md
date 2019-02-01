@@ -23,8 +23,14 @@ pip install -r requirements.txt
 
 # Use
 
-- Run the main script
+- Run HIU-SAC in the reacher environment
 
 ```
-python train.py
+python train.py -e reacher
+```
+
+- Evaluate the results. (Specify the directory that is printed during the learning process )
+
+```
+python eval.py path_to_log_directory
 ```
