@@ -63,6 +63,8 @@ def get_default_hiu_hyperparams(env_name):
             batch_size=64,
             replay_buffer_size=1e6,
 
+            i_entropy_scale=100.,
+
         )
     elif env_name.lower() == 'reacher':
         algo_hyperparams = dict(

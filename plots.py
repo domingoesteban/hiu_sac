@@ -395,8 +395,8 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
     x_max = action_higher[action_dim_x]
     y_max = action_higher[action_dim_y]
 
-    all_x = torch.arange(x_min, x_max, delta)
-    all_y = torch.arange(y_min, y_max, delta)
+    all_x = torch.arange(float(x_min), float(x_max), float(delta))
+    all_y = torch.arange(float(y_min), float(y_max), float(delta))
     xy_mesh = torch.meshgrid(all_x, all_y)
 
     all_acts = torch.zeros((len(all_x)*len(all_y), 2))

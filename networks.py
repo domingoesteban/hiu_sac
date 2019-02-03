@@ -53,20 +53,20 @@ class Intention(torch.nn.Module):
             init_fcn = torch.nn.init.xavier_normal_
 
         # Initialize hidden layers
-        gain_name = self.non_linear_name
-        if gain_name == 'elu':
-            gain_name = 'relu'
-        gain = torch.nn.init.calculate_gain(gain_name)
+        init_gain_name = self.non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
         for layer in self.layers:
-            init_fcn(layer.weight.data, gain=gain)
+            init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
         # Initialize output layer
-        gain_name = self.output_non_linear_name
-        if gain_name == 'elu':
-            gain_name = 'relu'
-        gain = torch.nn.init.calculate_gain(gain_name)
-        init_fcn(self.olayer.weight.data, gain=gain)
+        init_gain_name = self.output_non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
+        init_fcn(self.olayer.weight.data, gain=init_gain)
         torch.nn.init.constant_(self.olayer.bias.data, 0)
 
     def forward(self, x):
@@ -76,6 +76,81 @@ class Intention(torch.nn.Module):
                 x = self.layer_norms[ll](x)
         x = self.output_non_linear(self.olayer(x))
         return x
+
+
+class IntentionPolicy(torch.nn.Module):
+    """
+    Base NN class of an Intention head.
+    """
+    def __init__(self,
+                 input_size,
+                 hidden_sizes,
+                 output_size,
+                 non_linear,
+                 final_non_linear,
+                 batch_norm=False
+                 ):
+        super(IntentionPolicy, self).__init__()
+        self.batch_norm = batch_norm
+        self.non_linear_name = non_linear
+        self.output_non_linear_name = final_non_linear
+
+        self.non_linear = get_non_linear_op(self.non_linear_name)
+        self.output_non_linear = get_non_linear_op(self.output_non_linear_name)
+
+        # Network
+        self.layers = list()
+        self.layer_norms = list()
+        i_size = input_size
+        for ll, o_size in enumerate(hidden_sizes):
+            layer = torch.nn.Linear(i_size, o_size)
+            self.layers.append(layer)
+            self.__setattr__("layer{}".format(ll), layer)
+            if self.batch_norm:
+                bn = torch.nn.BatchNorm1d(o_size)
+                self.layer_norms.append(bn)
+                self.__setattr__("layer{}_norm".format(ll), bn)
+            i_size = o_size
+
+        self.mean_layer = torch.nn.Linear(i_size, output_size)
+        self.log_std_layer = torch.nn.Linear(i_size, output_size)
+
+        # Initialize weights
+        self.init_weights('uniform')
+
+    def init_weights(self, init_fcn='uniform'):
+        if init_fcn.lower() == 'uniform':
+            init_fcn = torch.nn.init.xavier_uniform_
+        else:
+            init_fcn = torch.nn.init.xavier_normal_
+
+        # Initialize hidden layers
+        init_gain_name = self.non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
+        for layer in self.layers:
+            init_fcn(layer.weight.data, gain=init_gain)
+            torch.nn.init.constant_(layer.bias.data, 0)
+
+        # Initialize mean and log_std layer
+        init_gain_name = self.output_non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
+        init_fcn(self.mean_layer.weight.data, gain=init_gain)
+        init_fcn(self.log_std_layer.weight.data, gain=init_gain)
+        torch.nn.init.constant_(self.mean_layer.bias.data, 0)
+        torch.nn.init.constant_(self.log_std_layer.bias.data, 0)
+
+    def forward(self, x):
+        for ll in range(len(self.layers)):
+            x = self.non_linear(self.layers[ll](x))
+            if self.batch_norm:
+                x = self.layer_norms[ll](x)
+        mean = self.output_non_linear(self.mean_layer(x))
+        log_std = self.output_non_linear(self.log_std_layer(x))
+        return mean, log_std
 
 
 class MultiValueNet(torch.nn.Module):
@@ -134,12 +209,12 @@ class MultiValueNet(torch.nn.Module):
             init_fcn = torch.nn.init.xavier_normal_
 
         # Initialize shared layers
-        gain_name = self.shared_non_linear_name
-        if gain_name == 'elu':
-            gain_name = 'relu'
-        gain = torch.nn.init.calculate_gain(gain_name)
+        init_gain_name = self.shared_non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
         for layer in self.shared_layers:
-            init_fcn(layer.weight.data, gain=gain)
+            init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
     def forward(self, x, intention=None):
@@ -277,10 +352,18 @@ class MultiPolicyNet(torch.nn.Module):
         # Intentional Policies
         self.policy_nets = list()
         for ii in range(num_intentions):
-            policy_net = Intention(
+            # policy_net = Intention(
+            #     input_size=i_size,
+            #     hidden_sizes=intention_sizes,
+            #     output_size=action_dim*2,  # Output means and log_stds
+            #     non_linear=intention_non_linear,
+            #     final_non_linear=intention_final_non_linear,
+            #     batch_norm=intention_batch_norm,
+            # )
+            policy_net = IntentionPolicy(
                 input_size=i_size,
                 hidden_sizes=intention_sizes,
-                output_size=action_dim*2,  # Output means and log_stds
+                output_size=action_dim,  # Output means and log_stds
                 non_linear=intention_non_linear,
                 final_non_linear=intention_final_non_linear,
                 batch_norm=intention_batch_norm,
@@ -334,9 +417,12 @@ class MultiPolicyNet(torch.nn.Module):
         means = list()
         log_stds = list()
         for policy in self.policy_nets:
-            pol_params = policy(x).unsqueeze(dim=-2)
-            means.append(pol_params[:, :, :self.action_dim])
-            log_stds.append(pol_params[:, :, self.action_dim:])
+            # pol_params = policy(x).unsqueeze(dim=-2)
+            # means.append(pol_params[:, :, :self.action_dim])
+            # log_stds.append(pol_params[:, :, self.action_dim:])
+            pol_params = policy(x)
+            means.append(pol_params[0].unsqueeze(dim=-2))
+            log_stds.append(pol_params[1].unsqueeze(dim=-2))
 
         activation_weights = self.combination_net(x)
         activation_weights = activation_weights.reshape(-1,
@@ -386,10 +472,10 @@ class MultiPolicyNet(torch.nn.Module):
             intention = self._pols_idxs[intention]
             mean = torch.index_select(means, dim=-2, index=intention).squeeze(-2)
 
-            std = \
-                torch.index_select(stds, dim=1, index=intention).squeeze(-2)
             log_std = \
                 torch.index_select(log_stds, dim=1, index=intention).squeeze(-2)
+            std = \
+                torch.index_select(stds, dim=1, index=intention).squeeze(-2)
             variance = \
                 torch.index_select(variances, dim=1, index=intention).squeeze(-2)
 
@@ -485,54 +571,57 @@ def clip_but_pass_gradient(x, l=-1., u=1.):
 
 
 if __name__ == '__main__':
-    print('&&&\n'*2)
-    print("Check Intention Network")
-    intention = Intention(
-        input_size=6,
-        hidden_sizes=(5, 3, 4),
-        output_size=2,
-        non_linear='relu',
-        final_non_linear='linear',
-        batch_norm=False,
-    )
-    print('Architecture:\n', intention)
-    input_tensor = torch.rand(6).unsqueeze(0)
-    print('input', input_tensor)
-    output = intention(input_tensor)
-    print('output', output)
+    torch.cuda.manual_seed(500)
+    torch.manual_seed(500)
+
+    # print('&&&\n'*2)
+    # print("Check Intention Network")
+    # intention = Intention(
+    #     input_size=6,
+    #     hidden_sizes=(5, 3, 4),
+    #     output_size=2,
+    #     non_linear='relu',
+    #     final_non_linear='linear',
+    #     batch_norm=False,
+    # )
+    # print('Architecture:\n', intention)
+    # input_tensor = torch.rand(6).unsqueeze(0)
+    # print('input', input_tensor)
+    # output = intention(input_tensor)
+    # print('output', output)
 
     batch = 5
     state_dim = 4
     action_dim = 2
     num_intentions = 3
 
-    print('&&&\n'*2)
-    print("Check Critic Network")
-    critic = MultiQNet(
-        num_intentions=num_intentions,
-        obs_dim=state_dim,
-        action_dim=action_dim,
-        shared_sizes=(2, 4),
-        intention_sizes=(10, 15, 9),
-        shared_non_linear='relu',
-        shared_batch_norm=False,
-        intention_non_linear='relu',
-        intention_final_non_linear='linear',
-        intention_batch_norm=False,
-    )
-    print('Architecture:\n', critic)
-    print('Named parameters:')
-    for name, param in critic.named_parameters():
-        print(name, param.shape, param.is_cuda)
-    print('^^^^')
-    for name, module in critic.named_children():
-        print(name, module)
-    state_tensor = torch.rand(batch, state_dim)
-    action_tensor = torch.rand(batch, action_dim)
-    print('input', state_tensor.shape, action_tensor.shape)
-    output = critic(state_tensor, action_tensor)
-    print('output', output, output.shape)
-    print('one_output', output[:, 0].shape)
+    # print('&&&\n'*2)
+    # print("Check Critic Network")
+    # critic = MultiQNet(
+    #     num_intentions=num_intentions,
+    #     obs_dim=state_dim,
+    #     action_dim=action_dim,
+    #     shared_sizes=(2, 4),
+    #     intention_sizes=(10, 15, 9),
+    #     shared_non_linear='relu',
+    #     shared_batch_norm=False,
+    #     intention_non_linear='relu',
+    #     intention_final_non_linear='linear',
+    #     intention_batch_norm=False,
+    # )
+    # print('Architecture:\n', critic)
+    # print('Named parameters:')
+    # for name, param in critic.named_parameters():
+    #     print(name, param.shape, param.is_cuda)
+    # print('^^^^')
+    # for name, module in critic.named_children():
+    #     print(name, module)
+    # state_tensor = torch.rand(batch, state_dim)
+    # action_tensor = torch.rand(batch, action_dim)
+    # print('input', state_tensor.shape, action_tensor.shape)
+    # output = critic(state_tensor, action_tensor)
+    # print('output', output, output.shape)
+    # print('one_output', output[:, 0].shape)
 
     print('&&&\n'*2)
     print("Check Policy Network")
@@ -540,8 +629,8 @@ if __name__ == '__main__':
         num_intentions=num_intentions,
         obs_dim=state_dim,
         action_dim=action_dim,
-        shared_sizes=(2, 4),
-        intention_sizes=(10, 15, 9),
+        shared_sizes=(5, 4),
+        intention_sizes=(10, 15, 3),
         shared_non_linear='relu',
         shared_batch_norm=False,
         intention_non_linear='relu',
@@ -557,9 +646,40 @@ if __name__ == '__main__':
         print(name, module)
     state_tensor = torch.rand(batch, state_dim)
     print('input', state_tensor.shape)
-    output = policy(state_tensor, log_prob=True)[0]
+    output, output_info = policy(state_tensor, log_prob=True)
     print('output', output.shape)
     print('one_output', output[:, 0].shape)
+
+    des_means = torch.randn(num_intentions, action_dim)
+    des_mean = torch.randn(action_dim)
+    min_std = 0.001
+    max_std = 5.2
+    des_std = (min_std - max_std) * torch.rand(action_dim) + max_std
+    des_stds = (min_std - max_std) * torch.rand(num_intentions, action_dim) + max_std
+
+    loss_fcn = torch.nn.MSELoss()
+    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
+    errors = list()
+    for i in range(5000):
+        output, output_info = policy(state_tensor, log_prob=True)
+        error_mean = loss_fcn(output_info['mean'], des_mean.expand_as(output_info['mean']))
+        error_means = loss_fcn(output_info['means'], des_means.expand_as(output_info['means']))
+        error_std = loss_fcn(output_info['log_std'].exp(), des_std.expand_as(output_info['log_std']))
+        error_stds = loss_fcn(output_info['log_stds'].exp(), des_stds.expand_as(output_info['log_stds']))
+
+        total_error = error_mean + error_means + error_std + error_stds
+
+        optimizer.zero_grad()
+        total_error.backward()
+        optimizer.step()
+        print(total_error.item(), '', error_mean.item(), error_means.item(),
+              '', error_std.item(), error_stds.item())
+        errors.append(total_error.item())
+
+    import matplotlib.pyplot as plt
+    plt.plot(errors)
+    plt.show()
+
 
     # optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
     #
