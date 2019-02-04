@@ -24,8 +24,8 @@ parser.add_argument('--seed', '-s', type=int, default=610,
                     help='Seed value [default: 610]')
 parser.add_argument('--task', '-t', type=int, default=None,
                     help='Task number [default: None (Main task)]')
-parser.add_argument('--horizon', '-o', type=int, default=50,
-                    help='Rollout horizon [default: 1000]')
+parser.add_argument('--horizon', '-o', type=int, default=100,
+                    help='Rollout horizon [default: 100]')
 parser.add_argument('--render', '-r', dest='render', default=False,
                     action='store_true',
                     help='Render environment during training [default: False]')
@@ -59,15 +59,18 @@ def eval_policy(env, policy, max_horizon=50, task=None,
                 seed=610, gpu_id=-1):
     rollout(
         env, policy,
-        max_horizon=max_horizon, device='cpu',
+        max_horizon=max_horizon,
+        fixed_horizon=True,
+        device='cpu',
         render=True,
         intention=task, deterministic=True,
     )
 
 
 def plot_value_fcn(qf, policy, env):
-    # obs = (-2, -2)
-    obs = (4, 4)
+    obs = (-2, -2)
+    # obs = (4, 4)
+    # obs = (-2, 4)
     plots.plot_q_values(
         qf,
         action_lower=env.action_space.low,
