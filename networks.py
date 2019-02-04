@@ -325,14 +325,6 @@ class MultiPolicyNet(torch.nn.Module):
         self.shared_non_linear = get_non_linear_op(self.shared_non_linear_name)
         self.combination_method = combination_method
 
-        # self.noise_loc = torch.nn.Parameter()
-        self.register_buffer('noise_loc', torch.zeros(action_dim, dtype=torch.float32))
-        self.register_buffer('noise_scale', torch.ones(action_dim, dtype=torch.float32))
-        self.noise_dist = torch.distributions.Normal(
-            loc=self.noise_loc,
-            scale=self.noise_scale,
-        )
-
         self._pols_idxs = torch.arange(self.num_intentions)
 
         # Shared Layers
@@ -385,6 +377,9 @@ class MultiPolicyNet(torch.nn.Module):
         else:
             self.combination_non_linear = get_non_linear_op('linear')
 
+        # Initialize weights
+        self.init_weights('uniform')
+
     def init_weights(self, init_fcn='uniform'):
         if init_fcn.lower() == 'uniform':
             init_fcn = torch.nn.init.xavier_uniform_
@@ -392,12 +387,12 @@ class MultiPolicyNet(torch.nn.Module):
             init_fcn = torch.nn.init.xavier_normal_
 
         # Initialize shared layers
-        gain_name = self.shared_non_linear_name
-        if gain_name == 'elu':
-            gain_name = 'relu'
-        gain = torch.nn.init.calculate_gain(gain_name)
+        init_gain_name = self.shared_non_linear_name
+        if init_gain_name == 'elu':
+            init_gain_name = 'relu'
+        init_gain = torch.nn.init.calculate_gain(init_gain_name)
         for layer in self.shared_layers:
-            init_fcn(layer.weight.data, gain=gain)
+            init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
     def forward(self, observation, deterministic=False, log_prob=False,
@@ -484,11 +479,6 @@ class MultiPolicyNet(torch.nn.Module):
             actions_vect = means
         else:
             # Sample from Gaussian distribution
-            # noise = self.noise_dist.sample((batch_size,))
-            # actions_vect = stds*noise.unsqueeze(1) + means
-            # action = std*noise + mean
-            # actions_vect = stds*torch.randn_like(stds) + means
-            # action = std*torch.randn_like(std) + mean
             noise = torch.randn_like(std)
             actions_vect = stds*noise.unsqueeze(1) + means
             action = std*noise + mean
@@ -530,17 +520,6 @@ class MultiPolicyNet(torch.nn.Module):
         pol_info['std'] = std
 
         return action, pol_info
-
-    def cuda(self, *args, **kwargs):
-        super(MultiPolicyNet, self).cuda(*args, **kwargs)
-        self.noise_dist.loc = self.noise_loc
-        self.noise_dist.scale = self.noise_scale
-
-    def cpu(self):
-        fcn_output = super(MultiPolicyNet, self).cpu()
-        self.noise_dist.loc = self.noise_loc
-        self.noise_dist.scale = self.noise_scale
-        return fcn_output
 
 
 def get_non_linear_op(name):
