@@ -395,14 +395,14 @@ class MultiPolicyNet(torch.nn.Module):
             init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
-    def forward(self, observation, deterministic=False, log_prob=False,
-                intention=None):
+    def forward(self, observation, deterministic=False, intention=None,
+                log_prob=False,
+                ):
 
         if log_prob and deterministic:
             raise ValueError("It is not possible to calculate log_probs in"
                              "deterministic policies")
 
-        batch_size = observation.shape[0]
         x = observation
         for ll in range(len(self.shared_layers)):
             x = self.shared_non_linear(self.shared_layers[ll](x))
