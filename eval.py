@@ -60,7 +60,7 @@ def eval_policy(env, policy, max_horizon=50, task=None,
     rollout(
         env, policy,
         max_horizon=max_horizon,
-        fixed_horizon=True,
+        fixed_horizon=False,
         device='cpu',
         render=True,
         intention=task, deterministic=True,

@@ -315,9 +315,9 @@ class HIUSAC:
         self.first_log = True
         self.log_values_error = 0
         self.log_policies_error = 0
-        self.log_means = torch.zeros(self.num_intentions + 1, self.action_dim)
-        self.log_stds = torch.zeros(self.num_intentions + 1, self.action_dim)
-        self.log_weights = torch.zeros(self.num_intentions, self.action_dim)
+        self.log_means = np.zeros((self.num_intentions + 1, self.action_dim))
+        self.log_stds = np.zeros((self.num_intentions + 1, self.action_dim))
+        self.log_weights = np.zeros((self.num_intentions, self.action_dim))
         self.log_eval_rewards = np.zeros((
             self.eval_rollouts, self.num_intentions + 1, self.max_horizon
         ))
@@ -328,16 +328,18 @@ class HIUSAC:
         gt.set_def_unique(False)
 
         for iter in gt.timed_for(
-                range(self.total_iterations),
+                range(init_iteration, self.total_iterations),
                 save_itrs=True,
         ):
             for rollout in range(self.train_rollouts):
                 obs = self.env.reset()
                 obs = torch_ify(obs, device=torch_device, dtype=torch.float32)
                 for step in range(self.max_horizon):
+                    if self.render:
+                        self.env.render()
                     interaction_info = interaction(
                         self.env, self.policy, obs,
-                        render=self.render, device=torch_device,
+                        device=torch_device,
                         intention=None, deterministic=False,
                     )
                     self.num_train_interactions += 1
@@ -614,7 +616,7 @@ class HIUSAC:
             self._alphas_optimizer.zero_grad()
             alphas_loss.backward()
             self._alphas_optimizer.step()
-            self.log_alphas.data.clamp_(min=math.log(self.max_alpha),
+            self.log_alphas.data.clamp_(min=math.log(self.min_alpha),
                                         max=math.log(self.max_alpha))
 
         # ########################### #
@@ -642,17 +644,18 @@ class HIUSAC:
 
         # Increase internal counter
         self.num_train_steps += 1
+        return
 
         # ######## #
         # Log data #
         # ######## #
         self.log_policies_error = policy_loss.item()
         self.log_values_error = values_loss.item()
-        self.log_means[:self.num_intentions] = u_new_means.mean(dim=0)
-        self.log_means[-1] = i_new_mean.mean(dim=0)
-        self.log_stds[:self.num_intentions] = u_new_log_stds.exp().mean(dim=0)
-        self.log_stds[-1] = i_new_log_std.exp().mean(dim=0)
-        self.log_weights = activation_weights.mean(dim=0)
+        self.log_means[:self.num_intentions] = np_ify(u_new_means.mean(dim=0))
+        self.log_means[-1] = np_ify(i_new_mean.mean(dim=0))
+        self.log_stds[:self.num_intentions] = np_ify(u_new_log_stds.exp().mean(dim=0))
+        self.log_stds[-1] = np_ify(i_new_log_std.exp().mean(dim=0))
+        self.log_weights = np_ify(activation_weights.mean(dim=0))
 
     def save(self):
         snapshot_gap = logger.get_snapshot_gap()
@@ -740,18 +743,18 @@ class HIUSAC:
         for aa in range(self.action_dim):
             for intention in range(self.num_intentions):
                 statistics["Mean Action %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_means[intention, aa].detach().cpu().numpy()
+                    self.log_means[intention, aa]
                 statistics["Std Action %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_stds[intention, aa].detach().cpu().numpy()
+                    self.log_stds[intention, aa]
             statistics["Mean Action %02d" % aa] = \
-                self.log_means[-1, aa].detach().cpu().numpy()
+                self.log_means[-1, aa]
             statistics["Std Action %02d" % aa] = \
-                self.log_stds[-1, aa].detach().cpu().numpy()
+                self.log_stds[-1, aa]
 
         for aa in range(self.action_dim):
             for intention in range(self.num_intentions):
                 statistics["Activation Weight %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_weights[intention, aa].detach().cpu().numpy()
+                    self.log_weights[intention, aa]
 
         # Evaluation Stats to plot
         statistics["Test Rewards Mean"] = \

@@ -20,7 +20,8 @@ parser.add_argument('--env', '-e', type=str, default='navigation2d',
 parser.add_argument('--log_dir', '-l', type=str, default=None,
                     help='Log directory [default: ./logs]')
 parser.add_argument('--iterations', '-i', type=int, default=None,
-                    help='Training iterations [default: None (recommended iters)]')
+                    help='Training iterations '
+                         '[default: None (recommended number of iterations)]')
 parser.add_argument('--render', '-r', dest='render', default=False,
                     action='store_true',
                     help='Render environment during training [default: False]')
@@ -65,6 +66,11 @@ def get_default_hiu_hyperparams(env_name):
 
             i_entropy_scale=1.,
 
+            auto_alpha=True,
+            # auto_alpha=False,
+            i_tgt_entro=None,
+            u_tgt_entros=None,
+
         )
     elif env_name.lower() == 'reacher':
         algo_hyperparams = dict(
@@ -82,6 +88,13 @@ def get_default_hiu_hyperparams(env_name):
 
             batch_size=256,
             replay_buffer_size=1e6,
+
+            i_entropy_scale=1.,
+
+            auto_alpha=True,
+            # auto_alpha=False,
+            i_tgt_entro=None,
+            u_tgt_entros=None,
         )
     elif env_name.lower() == 'pusher':
         algo_hyperparams = dict(
@@ -99,6 +112,13 @@ def get_default_hiu_hyperparams(env_name):
 
             batch_size=128,
             replay_buffer_size=1e6,
+
+            i_entropy_scale=1.,
+
+            # auto_alpha=True,
+            auto_alpha=False,
+            i_tgt_entro=None,
+            u_tgt_entros=None,
         )
     else:
         raise ValueError("Wrong environment name '%s'" % env_name)
