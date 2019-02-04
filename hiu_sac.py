@@ -315,6 +315,9 @@ class HIUSAC:
         self.first_log = True
         self.log_values_error = 0
         self.log_policies_error = 0
+        self.log_means = torch.zeros(self.num_intentions + 1, self.action_dim)
+        self.log_stds = torch.zeros(self.num_intentions + 1, self.action_dim)
+        self.log_weights = torch.zeros(self.num_intentions, self.action_dim)
         self.log_eval_rewards = np.zeros((
             self.eval_rollouts, self.num_intentions + 1, self.max_horizon
         ))
@@ -442,7 +445,6 @@ class HIUSAC:
         # Intentional policy info
         i_new_actions = i_all_actions[:self.batch_size]
         i_next_actions = i_all_actions[self.batch_size:].detach()
-
         i_new_log_pi = policy_info['log_prob'][:self.batch_size]
         i_next_log_pi = policy_info['log_prob'][self.batch_size:].detach()
 
@@ -451,6 +453,13 @@ class HIUSAC:
         u_next_actions = policy_info['action_vect'][self.batch_size:].detach()
         u_new_log_pi = policy_info['log_probs'][:self.batch_size]
         u_next_log_pi = policy_info['log_probs'][self.batch_size:].detach()
+
+        # Additional info
+        i_new_mean = policy_info['mean'][:self.batch_size]
+        u_new_means = policy_info['means'][:self.batch_size]
+        i_new_log_std = policy_info['log_std'][:self.batch_size]
+        u_new_log_stds = policy_info['log_stds'][:self.batch_size]
+        activation_weights = policy_info['activation_weights'][:self.batch_size]
 
         # Alphas
         # alphas = self.entropy_scales*torch.clamp(self.log_alphas,
@@ -497,7 +506,6 @@ class HIUSAC:
         # ####################### #
         # Policy Improvement Step #
         # ####################### #
-
         hiu_new_q1 = self.qf1(hiu_obs, hiu_new_actions)
 
         # TODO: Decide if use the minimum btw q1 and q2. Using new_q1 for now
@@ -511,7 +519,8 @@ class HIUSAC:
         # Policy KL loss: - (E_a[Q(s, a) + H(.)])
         policy_kl_loss = -torch.mean(
             hiu_new_q - alphas*hiu_new_log_pi
-            + policy_prior_log_probs
+            + policy_prior_log_probs,
+            dim=0,
         )
         policy_regu_loss = 0
         policy_loss = torch.sum(policy_kl_loss + policy_regu_loss)
@@ -520,16 +529,14 @@ class HIUSAC:
         self._policy_optimizer.zero_grad()
         policy_loss.backward()
         self._policy_optimizer.step()
-        self.log_policies_error = policy_loss.item()
 
         # ###################### #
         # Policy Evaluation Step #
         # ###################### #
-
         if self.target_vf is None:
             # Estimate from target Q-value(s)
             # Q1_target(s', a')
-            hiu_next_q1 = self.target_qf1(hiu_next_obs, hiu_actions)
+            hiu_next_q1 = self.target_qf1(hiu_next_obs, hiu_next_actions)
 
             if self.target_qf2 is not None:
                 # Q2_target(s', a')
@@ -558,7 +565,7 @@ class HIUSAC:
 
         # Calculate Bellman Backup for Q-values
         hiu_q_backup = hiu_rewards + (1. - hiu_terminals) * self.discount * hiu_next_v
-        hiu_q_backup.detach_()
+        # hiu_q_backup.detach_()
 
         # Predictions Q(s,a)
         hiu_q1_pred = self.qf1(obs, actions, intention=None)
@@ -593,8 +600,10 @@ class HIUSAC:
         values_loss = (hiu_qf1_loss + hiu_qf2_loss + hiu_vf_loss)
         values_loss.backward()
         self.values_optimizer.step()
-        self.log_values_error = values_loss.item()
 
+        # ####################### #
+        # Entropy Adjustment Step #
+        # ####################### #
         if self._auto_alphas:
             # NOTE: In formula is alphas and not log_alphas
             # log_alphas = self.log_alphas.clamp(max=MAX_LOG_ALPHA)
@@ -608,7 +617,9 @@ class HIUSAC:
             self.log_alphas.data.clamp_(min=math.log(self.max_alpha),
                                         max=math.log(self.max_alpha))
 
-        # Soft Update of Target Value Functions
+        # ########################### #
+        # Target Networks Update Step #
+        # ########################### #
         if self.num_train_steps % self.target_update_interval == 0:
             if self.target_vf is None:
                 soft_update_from_to(
@@ -631,6 +642,17 @@ class HIUSAC:
 
         # Increase internal counter
         self.num_train_steps += 1
+
+        # ######## #
+        # Log data #
+        # ######## #
+        self.log_policies_error = policy_loss.item()
+        self.log_values_error = values_loss.item()
+        self.log_means[:self.num_intentions] = u_new_means.mean(dim=0)
+        self.log_means[-1] = i_new_mean.mean(dim=0)
+        self.log_stds[:self.num_intentions] = u_new_log_stds.exp().mean(dim=0)
+        self.log_stds[-1] = i_new_log_std.exp().mean(dim=0)
+        self.log_weights = activation_weights.mean(dim=0)
 
     def save(self):
         snapshot_gap = logger.get_snapshot_gap()
@@ -714,6 +736,22 @@ class HIUSAC:
                 self.log_alphas[intention].exp().detach().cpu().numpy()
         statistics["Alpha"] = \
             self.log_alphas[-1].exp().detach().cpu().numpy()
+
+        for aa in range(self.action_dim):
+            for intention in range(self.num_intentions):
+                statistics["Mean Action %02d [U-%02d]" % (aa, intention)] = \
+                    self.log_means[intention, aa].detach().cpu().numpy()
+                statistics["Std Action %02d [U-%02d]" % (aa, intention)] = \
+                    self.log_stds[intention, aa].detach().cpu().numpy()
+            statistics["Mean Action %02d" % aa] = \
+                self.log_means[-1, aa].detach().cpu().numpy()
+            statistics["Std Action %02d" % aa] = \
+                self.log_stds[-1, aa].detach().cpu().numpy()
+
+        for aa in range(self.action_dim):
+            for intention in range(self.num_intentions):
+                statistics["Activation Weight %02d [U-%02d]" % (aa, intention)] = \
+                    self.log_weights[intention, aa].detach().cpu().numpy()
 
         # Evaluation Stats to plot
         statistics["Test Rewards Mean"] = \
