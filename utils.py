@@ -7,7 +7,7 @@ def interaction(env, policy, obs, device='cpu', **pol_kwargs):
     # Get action from policy
     action, pol_info = policy(torch_ify(obs[None], dtype=torch.float32,
                                         device=device),
-                              pol_kwargs)
+                              **pol_kwargs)
 
     # Interact with the environment
     next_obs, reward, done, env_info = env.step(np_ify(action[0, :]))
@@ -32,14 +32,13 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             device='cpu',
             **pol_kwargs):
 
-    if return_info:
-        rollout_obs = list()
-        rollout_action = list()
-        rollout_next_obs = list()
-        rollout_reward = list()
-        rollout_done = list()
-        rollout_reward_vector = list()
-        rollout_done_vector = list()
+    rollout_obs = list()
+    rollout_action = list()
+    rollout_next_obs = list()
+    rollout_reward = list()
+    rollout_done = list()
+    rollout_reward_vector = list()
+    rollout_done_vector = list()
 
     obs = env.reset()
     for step in range(max_horizon):
@@ -49,7 +48,7 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         # start_time = time.time()
         interaction_info = interaction(
             env, policy, obs,
-            render=render, device=device,
+            device=device,
             **pol_kwargs
         )
         # elapsed_time = time.time() - start_time
@@ -67,21 +66,19 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         obs = interaction_info['next_obs']
 
         if not fixed_horizon and interaction_info['done']:
-            print("Environment done!")
+            print("The rollout has finished because the environment is done!")
             break
+    # print("The rollout has finished because the maximum horizon is reached!")
 
-    if return_info:
-        return dict(
-            obs=rollout_obs,
-            action=rollout_action,
-            next_obs=rollout_next_obs,
-            reward=rollout_reward,
-            done=rollout_done,
-            reward_vector=rollout_reward_vector,
-            done_vector=rollout_done_vector,
-        )
-    else:
-        return dict()
+    return dict(
+        obs=rollout_obs,
+        action=rollout_action,
+        next_obs=rollout_next_obs,
+        reward=rollout_reward,
+        done=rollout_done,
+        reward_vector=rollout_reward_vector,
+        done_vector=rollout_done_vector,
+    )
 
 
 def np_ify(tensor):
