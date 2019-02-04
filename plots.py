@@ -94,32 +94,6 @@ def axis_format(axis):
     axis.set_facecolor((0.917, 0.917, 0.949))
 
 
-def plot_contours(ax, values, x_min, x_max, y_min, y_max, delta=0.05):
-    # xlim = (1.1*x_min, 1.1*x_max)
-    # ylim = (1.1*y_min, 1.1*y_max)
-    xlim = (1.0*x_min, 1.0*x_max)
-    ylim = (1.0*y_min, 1.0*y_max)
-    all_x = np.arange(x_min, x_max, delta)
-    all_y = np.arange(y_min, y_max, delta)
-    xy_mesh = np.meshgrid(all_x, all_y)
-    values = values.reshape(len(all_x), len(all_y))
-
-    contours = ax.contour(xy_mesh[0], xy_mesh[1], values, 20,
-                          colors='dimgray')
-    ax.clabel(contours, inline=1, fontsize=10, fmt='%.0f')
-    ax.imshow(values, extent=(x_min, x_max, y_min, y_max), origin='lower',
-              alpha=0.5)
-
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-
-    ax.set_xlabel('Vel. X', fontweight='bold', fontsize=18)
-    ax.set_ylabel('Vel. Y', fontweight='bold', fontsize=18)
-    ax.axis('equal')
-    ax.set_aspect('equal', 'box')
-    ax.grid(False)
-
-
 def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
     labels_to_plot = ['Test Returns Mean']
 
@@ -204,8 +178,17 @@ def plot_intentions_info(csv_file, num_intentions=None, block=False):
     plt.show(block=block)
 
 
+def plot_contours(ax, x_tensor, y_tensor, values):
+    contours = ax.contour(x_tensor, y_tensor, values, 20,
+                          colors='dimgray')
+    ax.clabel(contours, inline=1, fontsize=10, fmt='%.0f')
+    ax.imshow(values, extent=(x_tensor.min(), x_tensor.max(),
+                              y_tensor.min(), y_tensor.max()),
+              origin='lower', alpha=0.5)
+
+
 def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
-                  obs_dims=(0, 1), action_dims=(0, 1), delta=0.05,
+                  obs_dims=(0, 1), action_dims=(0, 1), delta=0.01,
                   device='cpu'):
     # Values Plots
     num_intentions = 2
@@ -222,11 +205,11 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
 
     all_x = torch.arange(float(x_min), float(x_max), float(delta))
     all_y = torch.arange(float(y_min), float(y_max), float(delta))
-    xy_mesh = torch.meshgrid(all_x, all_y)
+    x_mesh, y_mesh = torch.meshgrid(all_x, all_y)
 
-    all_acts = torch.zeros((len(all_x)*len(all_y), 2))
-    all_acts[:, 0] = xy_mesh[0].contiguous().view(-1)
-    all_acts[:, 1] = xy_mesh[1].contiguous().view(-1)
+    x_mesh = x_mesh.t()
+    y_mesh = y_mesh.t()
+    all_acts = torch.stack((x_mesh, y_mesh), dim=-1)
 
     fig, all_axs = \
         subplots(1, num_intentions + 1,
@@ -243,9 +226,9 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
                           fontdict={'fontsize': 30, 'fontweight': 'medium'})
 
     all_obs = torch.tensor(obs, dtype=torch.float32, device=device)
-    all_obs = all_obs.unsqueeze(0).expand_as(all_acts)
+    all_obs = all_obs.expand_as(all_acts)
 
-    q_vals = qf(all_obs, all_acts)
+    q_vals = qf(all_obs, all_acts).squeeze(-1).detach()
 
     if policy is not None:
         n_samples = 50
@@ -259,8 +242,13 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
 
     for intention in range(num_intentions + 1):
         ax = all_axs[intention]
-        plot_contours(ax, q_vals[:, intention, :].cpu().data.numpy(),
-                      x_min, x_max, y_min, y_max, delta=delta)
+        plot_contours(ax, x_mesh, y_mesh, q_vals[:, :, intention])
+
+        ax.set_xlabel('Vel. X', fontweight='bold', fontsize=18)
+        ax.set_ylabel('Vel. Y', fontweight='bold', fontsize=18)
+        ax.axis('equal')
+        ax.set_aspect('equal', 'box')
+        ax.grid(False)
 
         ax.set_xlim(x_min)
         ax.set_ylim(y_min)
