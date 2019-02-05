@@ -325,7 +325,7 @@ def record_tabular_misc_stat(key, values, placement='back'):
         record_tabular(prefix + "Max" + suffix, np.nan)
 
 
-def create_exp_name(exp_prefix, exp_id=0, seed=0):
+def create_exp_name(exp_prefix, seed=0):
     """
     Create a semi-unique experiment name that has a timestamp
     :param exp_prefix:
@@ -334,10 +334,10 @@ def create_exp_name(exp_prefix, exp_id=0, seed=0):
     """
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
-    return "%s_%s_%04d--s-%d" % (exp_prefix, timestamp, exp_id, seed)
+    return "%s--s-%04d--%s" % (exp_prefix, seed, timestamp)
 
 
-def create_log_dir(exp_prefix, exp_id=0, seed=0, base_log_dir=None):
+def create_log_dir(exp_prefix, seed=0, base_log_dir=None):
     """
     Creates and returns a unique log directory.
 
@@ -346,8 +346,7 @@ def create_log_dir(exp_prefix, exp_id=0, seed=0, base_log_dir=None):
     :param exp_id: Different exp_ids will be in different directories.
     :return:
     """
-    exp_name = create_exp_name(exp_prefix, exp_id=exp_id,
-                               seed=seed)
+    exp_name = create_exp_name(exp_prefix, seed=seed)
     if base_log_dir is None:
         base_log_dir = LOCAL_LOG_DIR
     log_dir = osp.join(base_log_dir, exp_prefix.replace("_", "-"), exp_name)
@@ -359,22 +358,60 @@ def create_log_dir(exp_prefix, exp_id=0, seed=0, base_log_dir=None):
 
 def setup_logger(
         exp_prefix="default",
-        exp_id=0,
         seed=0,
+        variant=None,
         log_dir=None,
+        variant_log_file="variant.json",
         tabular_log_file="progress.csv",
         snapshot_mode="last",
+        snapshot_gap=1,
 ):
     if log_dir is None:
         log_dir = LOCAL_LOG_DIR
+    log_dir = create_log_dir(exp_prefix, seed=seed, base_log_dir=log_dir)
 
-    log_dir = create_log_dir(exp_prefix, exp_id=exp_id, seed=seed,
-                             base_log_dir=log_dir)
+    if variant is not None:
+        log("Variant:")
+        log(json.dumps(dict_to_safe_json(variant), indent=2))
+        variant_log_path = osp.join(log_dir, variant_log_file)
+        log_variant(variant_log_path, variant)
 
     tabular_log_path = osp.join(log_dir, tabular_log_file)
     add_tabular_output(tabular_log_path)
 
     set_snapshot_dir(log_dir)
     set_snapshot_mode(snapshot_mode)
+    set_snapshot_gap(snapshot_gap)
 
     return log_dir
+
+
+def dict_to_safe_json(d):
+    """
+    Convert each value in the dictionary into a JSON'able primitive.
+    :param d:
+    :return:
+    """
+    new_d = {}
+    for key, item in d.items():
+        if safe_json(item):
+            new_d[key] = item
+        else:
+            if isinstance(item, dict):
+                new_d[key] = dict_to_safe_json(item)
+            else:
+                new_d[key] = str(item)
+    return new_d
+
+
+def safe_json(data):
+    if data is None:
+        return True
+    elif isinstance(data, (bool, int, float)):
+        return True
+    elif isinstance(data, (tuple, list)):
+        return all(safe_json(x) for x in data)
+    elif isinstance(data, dict):
+        return all(isinstance(k, str) and safe_json(v) for k, v in data.items())
+    return False
+

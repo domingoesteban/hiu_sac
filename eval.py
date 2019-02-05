@@ -3,8 +3,11 @@ from pathlib import Path
 import sys
 import os.path as osp
 import torch
+import json
+
 
 import envs
+from envs import get_normalized_env
 from hiu_sac import HIUSAC
 from utils import interaction
 from utils import rollout
@@ -18,45 +21,27 @@ sys.path.append(str(root_dir))
 parser = argparse.ArgumentParser(description='Train Arguments')
 parser.add_argument('log_dir', type=str,
                     help='Log directory')
-parser.add_argument('--env', '-e', type=str, default='navigation2d',
-                    help='Name of environment [default: navigation2d]')
 parser.add_argument('--seed', '-s', type=int, default=610,
                     help='Seed value [default: 610]')
 parser.add_argument('--task', '-t', type=int, default=None,
                     help='Task number [default: None (Main task)]')
-parser.add_argument('--horizon', '-o', type=int, default=100,
+parser.add_argument('--horizon', '-o', type=int, default=None,
                     help='Rollout horizon [default: 100]')
-parser.add_argument('--render', '-r', dest='render', default=False,
-                    action='store_true',
-                    help='Render environment during training [default: False]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
 
 
-def get_environment(env_name, subtask=None, seed=610, render=False):
-    print("Loading environment %s" % env_name)
-
-    if env_name.lower() == 'navigation2d':
-        environment = envs.Navitation2D(subtask=subtask, seed=seed)
-    elif env_name.lower() == 'reacher':
-        environment = envs.Reacher(subtask=subtask, seed=seed,
-                                   render=render)
-    elif env_name.lower() == 'pusher':
-        environment = envs.Pusher(subtask=subtask, seed=seed,
-                                  render=render)
-    else:
-        raise ValueError("Wrong environment name '%s'" % env_name)
-
-    return envs.NormalizedEnv(environment)
-
-
 def plot_progress(progress_file):
+    """
+    Function for plotting useful data from a learning process.
+    :param progress_file:
+    :return:
+    """
     plots.plot_intentions_eval_returns(progress_file)
     plots.plot_intentions_info(progress_file)
 
 
-def eval_policy(env, policy, max_horizon=50, task=None,
-                seed=610, gpu_id=-1):
+def eval_policy(env, policy, max_horizon=50, task=None):
     rollout(
         env, policy,
         max_horizon=max_horizon,
@@ -86,7 +71,6 @@ def plot_value_fcn(qf, policy, env):
 
 
 if __name__ == '__main__':
-
     # Parse and print out parameters
     args = parser.parse_args()
 
@@ -94,8 +78,17 @@ if __name__ == '__main__':
     log_dir = args.log_dir
     progress_file = osp.join(log_dir, 'progress.csv')
 
-    # Get model
-    env = get_environment(args.env, args.task, args.seed, render=True)
+    # Get environment from log directory
+    with open(osp.join(log_dir, 'variant.json')) as json_data:
+        log_data = json.load(json_data)
+        env_name = log_data['env_name']
+        env_params = log_data['env_params']
+        algo_params = log_data['algo_params']
+        seed = algo_params['seed']
+        horizon = algo_params['max_horizon']
+    env, env_params = get_normalized_env(
+        env_name, args.task, args.seed, render=True, new_env_params=env_params
+    )
 
     # Get models from file
     models_dir = osp.join(log_dir, 'models', 'last_itr')
@@ -104,14 +97,11 @@ if __name__ == '__main__':
     policy = torch.load(policy_file).cpu()
     qf = torch.load(qf_file).cpu()
 
-    # Plot Q-values
-
-    # Evaluate policy in the environment
     while True:
-        user_input = input("Select an option "
-                           "('p':plot progress, 'e':evaluate, 'v':plot_qval). "
-                           "Or 'q' to exit: ")
-        # user_input = 'v'
+        # user_input = input("Select an option "
+        #                    "('p':plot progress, 'e':evaluate, 'v':plot_qval). "
+        #                    "Or 'q' to exit: ")
+        user_input = 'e'
         if user_input.lower() == 'q':
             print("Closing the script. Bye!")
             break
@@ -120,11 +110,11 @@ if __name__ == '__main__':
         elif user_input.lower() == 'v':
             plot_value_fcn(qf, policy, env)
         elif user_input.lower() == 'e':
+            if args.horizon is not None:
+                horizon = args.horizon
             eval_policy(env, policy,
-                        max_horizon=args.horizon,
+                        max_horizon=horizon,
                         task=args.task,
-                        seed=args.seed,
-                        gpu_id=args.gpu,
                         )
         else:
             print("Wrong option!")

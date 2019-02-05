@@ -4,6 +4,8 @@ import sys
 
 import envs
 from hiu_sac import HIUSAC
+from logger.logger import setup_logger
+from envs import get_normalized_env
 
 # Add local files to path
 root_dir = Path.cwd()
@@ -19,6 +21,8 @@ parser.add_argument('--env', '-e', type=str, default='navigation2d',
                     help='Name of environment [default: navigation2d]')
 parser.add_argument('--log_dir', '-l', type=str, default=None,
                     help='Log directory [default: ./logs]')
+parser.add_argument('--snap_mode', type=str, default='gap_and_last')
+parser.add_argument('--snap_gap', type=int, default=25)
 parser.add_argument('--iterations', '-i', type=int, default=None,
                     help='Training iterations '
                          '[default: None (recommended number of iterations)]')
@@ -27,23 +31,6 @@ parser.add_argument('--render', '-r', dest='render', default=False,
                     help='Render environment during training [default: False]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
-
-
-def get_environment(env_name, subtask=None, seed=610, render=False):
-    print("Loading environment %s" % env_name)
-
-    if env_name.lower() == 'navigation2d':
-        environment = envs.Navitation2D(subtask=subtask, seed=seed)
-    elif env_name.lower() == 'reacher':
-        environment = envs.Reacher(subtask=subtask, seed=seed,
-                                   render=render)
-    elif env_name.lower() == 'pusher':
-        environment = envs.Pusher(subtask=subtask, seed=seed,
-                                  render=render)
-    else:
-        raise ValueError("Wrong environment name '%s'" % env_name)
-
-    return envs.NormalizedEnv(environment)
 
 
 def get_default_hiu_hyperparams(env_name):
@@ -101,7 +88,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=200,
+            total_iterations=300,
             train_rollouts=3,
             eval_rollouts=2,
             max_horizon=1000,
@@ -117,7 +104,7 @@ def get_default_hiu_hyperparams(env_name):
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=None,
+            i_tgt_entro=1.e-0,
             u_tgt_entros=None,
         )
     else:
@@ -131,8 +118,10 @@ if __name__ == '__main__':
     # Parse and print out parameters
     args = parser.parse_args()
 
-    env = get_environment(args.env, args.task, args.seed, args.render)
+    # Get Environment
+    env, env_params = get_normalized_env(args.env, args.task, args.seed, args.render)
 
+    # Get default algorithm hyperparameters
     default_hyperparams = get_default_hiu_hyperparams(args.env)
 
     # Replacing default hyperparameters
@@ -142,6 +131,20 @@ if __name__ == '__main__':
     if args.iterations is not None:
         default_hyperparams['total_iterations'] = args.iterations
 
+    expt_variant = dict(
+        algo_params=default_hyperparams,
+        env_name=args.env,
+        env_params=env_params,
+    )
+
+    log_dir = setup_logger(
+        exp_prefix=args.env,
+        seed=args.seed,
+        variant=expt_variant,
+        snapshot_mode=args.snap_mode,
+        snapshot_gap=args.snap_gap,
+        log_dir=args.log_dir
+    )
     algo = HIUSAC(
         env,
         **default_hyperparams

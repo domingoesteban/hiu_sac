@@ -68,8 +68,6 @@ class HIUSAC:
             i_tgt_entro=None,
             u_tgt_entros=None,
 
-            log_dir=None,
-
     ):
         self.use_gpu = gpu_id >= 0
         global torch_device
@@ -306,12 +304,6 @@ class HIUSAC:
             **optimizer_kwargs
         )
 
-        # Logs
-        self.log_dir = logger.setup_logger(
-            exp_prefix=self.env.name,
-            seed=seed,
-            log_dir=log_dir,
-        )
         self.first_log = True
         self.log_values_error = 0
         self.log_policies_error = 0
@@ -662,7 +654,7 @@ class HIUSAC:
         snapshot_mode = logger.get_snapshot_mode()
 
         save_full_path = os.path.join(
-            self.log_dir,
+            snapshot_dir,
             'models'
         )
 
@@ -723,7 +715,7 @@ class HIUSAC:
         pass
 
     def log(self):
-        logger.log("Logging data in directory: %s" % self.log_dir)
+        logger.log("Logging data in directory: %s" % logger.get_snapshot_dir())
         # Statistics dictionary
         statistics = OrderedDict()
 
