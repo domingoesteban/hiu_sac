@@ -62,7 +62,7 @@ class HIUSAC:
             i_entropy_scale=1.,
             u_entropy_scale=None,
             max_alpha=10,
-            min_alpha=0.1,
+            min_alpha=0.01,
             # auto_alpha=True,
             auto_alpha=False,
             i_tgt_entro=None,
@@ -644,7 +644,6 @@ class HIUSAC:
 
         # Increase internal counter
         self.num_train_steps += 1
-        return
 
         # ######## #
         # Log data #

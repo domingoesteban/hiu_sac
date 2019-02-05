@@ -34,11 +34,6 @@ parser.add_argument('--gpu', type=int, default=-1,
 
 
 def get_environment(env_name, subtask=None, seed=610, render=False):
-    if env_name.lower() not in [
-        'navigation2d',
-        'reacher'
-    ]:
-        raise ValueError("Wrong environment name '%s'" % env_name)
     print("Loading environment %s" % env_name)
 
     if env_name.lower() == 'navigation2d':
@@ -46,6 +41,11 @@ def get_environment(env_name, subtask=None, seed=610, render=False):
     elif env_name.lower() == 'reacher':
         environment = envs.Reacher(subtask=subtask, seed=seed,
                                    render=render)
+    elif env_name.lower() == 'pusher':
+        environment = envs.Pusher(subtask=subtask, seed=seed,
+                                  render=render)
+    else:
+        raise ValueError("Wrong environment name '%s'" % env_name)
 
     return envs.NormalizedEnv(environment)
 
@@ -71,6 +71,8 @@ def plot_value_fcn(qf, policy, env):
     obs = (-2, -2)
     # obs = (4, 4)
     # obs = (-2, 4)
+    import numpy as np
+    obs = np.zeros(env.obs_dim)
     plots.plot_q_values(
         qf,
         action_lower=env.action_space.low,

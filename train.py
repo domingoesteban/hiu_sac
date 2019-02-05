@@ -77,7 +77,7 @@ def get_default_hiu_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=200,
+            total_iterations=50,
             train_rollouts=3,
             eval_rollouts=2,
             max_horizon=1000,
@@ -102,7 +102,7 @@ def get_default_hiu_hyperparams(env_name):
             use_q2=True,
             explicit_vf=False,
             total_iterations=200,
-            train_rollouts=1,
+            train_rollouts=3,
             eval_rollouts=2,
             max_horizon=1000,
             fixed_horizon=True,
@@ -110,13 +110,13 @@ def get_default_hiu_hyperparams(env_name):
             gpu_id=-1,
             seed=610,
 
-            batch_size=128,
+            batch_size=256,
             replay_buffer_size=1e6,
 
             i_entropy_scale=1.,
 
-            # auto_alpha=True,
-            auto_alpha=False,
+            auto_alpha=True,
+            # auto_alpha=False,
             i_tgt_entro=None,
             u_tgt_entros=None,
         )
