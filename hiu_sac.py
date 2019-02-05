@@ -686,16 +686,18 @@ class HIUSAC:
             models_dirs = list((
                 os.path.join(
                     save_full_path,
-                    str('itr_%03d' % self.num_iters)
-                ),
-                os.path.join(
-                    save_full_path,
                     str('last_itr')
                 ),
             ))
+            if self.num_iters % snapshot_gap == 0:
+                models_dirs.append(
+                    os.path.join(
+                        save_full_path,
+                        str('itr_%03d' % self.num_iters)
+                    ),
+                )
         else:
             return
-
         for save_path in models_dirs:
             # logger.log('Saving models to %s' % save_full_path)
             if not os.path.exists(save_path):
@@ -707,9 +709,11 @@ class HIUSAC:
             torch.save(self.target_qf2, save_path + '/target_qf2.pt')
             torch.save(self.vf, save_path + '/vf.pt')
 
-        if not os.path.exists(save_full_path):
-            os.makedirs(save_full_path)
-        torch.save(self.replay_buffer, save_full_path + '/replay_buffer.pt')
+        if self.num_iters % snapshot_gap == 0 or \
+                self.num_iters == self.total_iterations - 1:
+            if not os.path.exists(save_full_path):
+                os.makedirs(save_full_path)
+            torch.save(self.replay_buffer, save_full_path + '/replay_buffer.pt')
 
     def load(self):
         pass

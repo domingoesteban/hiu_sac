@@ -1,3 +1,4 @@
+import os.path as osp
 import argparse
 from pathlib import Path
 import sys
@@ -11,11 +12,11 @@ from envs import get_normalized_env
 root_dir = Path.cwd()
 sys.path.append(str(root_dir))
 
-# Log and model saving parameters
+# Script parameters
 parser = argparse.ArgumentParser(description='Train Arguments')
 parser.add_argument('--seed', '-s', type=int, default=610,
                     help='Seed value [default: 610]')
-parser.add_argument('--task', '-t', type=int, default=None,
+parser.add_argument('--task', '-t', type=int, default=-1,
                     help='Task number [default: None (Main task)]')
 parser.add_argument('--env', '-e', type=str, default='navigation2d',
                     help='Name of environment [default: navigation2d]')
@@ -31,9 +32,11 @@ parser.add_argument('--render', '-r', dest='render', default=False,
                     help='Render environment during training [default: False]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
+parser.add_argument('--algo', type=str, default='hiusac',
+                    help='GPU ID [default: -1 (cpu)]')
 
 
-def get_default_hiu_hyperparams(env_name):
+def get_default_hiusac_hyperparams(env_name):
     if env_name.lower() == 'navigation2d':
         algo_hyperparams = dict(
             net_size=64,
@@ -55,7 +58,7 @@ def get_default_hiu_hyperparams(env_name):
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=None,
+            i_tgt_entro=5.e-1,
             u_tgt_entros=None,
 
         )
@@ -114,15 +117,21 @@ def get_default_hiu_hyperparams(env_name):
 
 
 if __name__ == '__main__':
-
     # Parse and print out parameters
     args = parser.parse_args()
+
+    if args.task == -1:
+        args.task = None
 
     # Get Environment
     env, env_params = get_normalized_env(args.env, args.task, args.seed, args.render)
 
     # Get default algorithm hyperparameters
-    default_hyperparams = get_default_hiu_hyperparams(args.env)
+    if args.algo.lower() == 'hiusac':
+        default_hyperparams = get_default_hiusac_hyperparams(args.env)
+        algorithm = HIUSAC
+    else:
+        raise NotImplementedError("Option %s not available" % args.algo)
 
     # Replacing default hyperparameters
     default_hyperparams['render'] = args.render
@@ -138,14 +147,14 @@ if __name__ == '__main__':
     )
 
     log_dir = setup_logger(
-        exp_prefix=args.env,
+        exp_prefix=args.env + '-' + args.algo.lower(),
         seed=args.seed,
         variant=expt_variant,
         snapshot_mode=args.snap_mode,
         snapshot_gap=args.snap_gap,
-        log_dir=args.log_dir
+        log_dir=args.log_dir,
     )
-    algo = HIUSAC(
+    algo = algorithm(
         env,
         **default_hyperparams
     )

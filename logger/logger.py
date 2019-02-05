@@ -334,7 +334,7 @@ def create_exp_name(exp_prefix, seed=0):
     """
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
-    return "%s--s-%04d--%s" % (exp_prefix, seed, timestamp)
+    return "%s--s-%d---%s" % (exp_prefix, seed, timestamp)
 
 
 def create_log_dir(exp_prefix, seed=0, base_log_dir=None):
@@ -369,7 +369,6 @@ def setup_logger(
     if log_dir is None:
         log_dir = LOCAL_LOG_DIR
     log_dir = create_log_dir(exp_prefix, seed=seed, base_log_dir=log_dir)
-
     if variant is not None:
         log("Variant:")
         log(json.dumps(dict_to_safe_json(variant), indent=2))

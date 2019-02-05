@@ -17,7 +17,7 @@ import plots
 root_dir = Path.cwd()
 sys.path.append(str(root_dir))
 
-# Log and model saving parameters
+# Script parameters
 parser = argparse.ArgumentParser(description='Train Arguments')
 parser.add_argument('log_dir', type=str,
                     help='Log directory')
@@ -29,6 +29,7 @@ parser.add_argument('--horizon', '-o', type=int, default=None,
                     help='Rollout horizon [default: 100]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
+parser.add_argument('--stochastic', action='store_true')
 
 
 def plot_progress(progress_file):
@@ -41,30 +42,31 @@ def plot_progress(progress_file):
     plots.plot_intentions_info(progress_file)
 
 
-def eval_policy(env, policy, max_horizon=50, task=None):
+def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False):
     rollout(
         env, policy,
         max_horizon=max_horizon,
         fixed_horizon=False,
         device='cpu',
         render=True,
-        intention=task, deterministic=True,
+        intention=task, deterministic=not stochastic,
     )
 
 
 def plot_value_fcn(qf, policy, env):
-    obs = (-2, -2)
-    # obs = (4, 4)
-    # obs = (-2, 4)
     import numpy as np
     obs = np.zeros(env.obs_dim)
+    actions_dims = (0, 1)
+    obs[actions_dims[0]] = -2
+    obs[actions_dims[1]] = -2
+
     plots.plot_q_values(
         qf,
         action_lower=env.action_space.low,
         action_higher=env.action_space.high,
         obs=obs,
         policy=policy,
-        action_dims=(0, 1),
+        action_dims=actions_dims,
         delta=0.05,
         device='cpu'
     )
@@ -98,10 +100,10 @@ if __name__ == '__main__':
     qf = torch.load(qf_file).cpu()
 
     while True:
-        # user_input = input("Select an option "
-        #                    "('p':plot progress, 'e':evaluate, 'v':plot_qval). "
-        #                    "Or 'q' to exit: ")
-        user_input = 'e'
+        user_input = input("Select an option "
+                           "('p':plot progress, 'e':evaluate, 'v':plot_qval). "
+                           "Or 'q' to exit: ")
+        # user_input = 'e'
         if user_input.lower() == 'q':
             print("Closing the script. Bye!")
             break
@@ -115,6 +117,7 @@ if __name__ == '__main__':
             eval_policy(env, policy,
                         max_horizon=horizon,
                         task=args.task,
+                        stochastic=args.stochastic,
                         )
         else:
             print("Wrong option!")

@@ -398,7 +398,6 @@ class MultiPolicyNet(torch.nn.Module):
     def forward(self, observation, deterministic=False, intention=None,
                 log_prob=False,
                 ):
-
         if log_prob and deterministic:
             raise ValueError("It is not possible to calculate log_probs in"
                              "deterministic policies")

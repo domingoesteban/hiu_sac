@@ -41,10 +41,9 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
     rollout_done_vector = list()
 
     obs = env.reset()
+    if render:
+        env.render()
     for step in range(max_horizon):
-        if render:
-            env.render()
-
         # start_time = time.time()
         interaction_info = interaction(
             env, policy, obs,
@@ -53,6 +52,8 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         )
         # elapsed_time = time.time() - start_time
         # print(elapsed_time)
+        if render:
+            env.render()
 
         if return_info:
             rollout_obs.append(obs)
@@ -97,3 +98,6 @@ def torch_ify(ndarray, dtype=None, device=None):
     else:
         return torch.as_tensor(ndarray, device=device, dtype=dtype)
 
+
+def string_between(s, a, b):
+    return s.split(a)[1].split(b)[0]
