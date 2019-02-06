@@ -325,7 +325,7 @@ class MultiPolicyNet(torch.nn.Module):
         self.shared_non_linear = get_non_linear_op(self.shared_non_linear_name)
         self.combination_method = combination_method
 
-        self._pols_idxs = torch.arange(self.num_intentions)
+        self.register_buffer('_pols_idxs', torch.arange(self.num_intentions))
 
         # Shared Layers
         self.shared_layers = list()
@@ -441,6 +441,10 @@ class MultiPolicyNet(torch.nn.Module):
 
         stds = log_stds.exp()
         variances = stds**2
+
+        # If there is only one intention return the only intention
+        if not self.num_intentions > 1:
+            intention = 0
 
         if intention is None:
             # New Variance
@@ -571,7 +575,7 @@ if __name__ == '__main__':
     batch = 5
     state_dim = 4
     action_dim = 2
-    num_intentions = 3
+    num_intentions = 1
 
     # print('&&&\n'*2)
     # print("Check Critic Network")
