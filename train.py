@@ -42,7 +42,7 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=64,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=50,
+            total_iterations=200,
             train_rollouts=5,
             eval_rollouts=3,
             max_horizon=30,
@@ -58,7 +58,7 @@ def get_default_hiusac_hyperparams(env_name):
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=5.e-1,
+            i_tgt_entro=0.e-1,
             u_tgt_entros=None,
 
         )
@@ -67,9 +67,9 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=50,
+            total_iterations=100,
             train_rollouts=3,
-            eval_rollouts=2,
+            eval_rollouts=3,
             max_horizon=1000,
             fixed_horizon=True,
             render=False,
@@ -83,7 +83,8 @@ def get_default_hiusac_hyperparams(env_name):
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=None,
+            # i_tgt_entro=None,
+            i_tgt_entro=1.e-0,
             u_tgt_entros=None,
         )
     elif env_name.lower() == 'pusher':
@@ -110,6 +111,30 @@ def get_default_hiusac_hyperparams(env_name):
             i_tgt_entro=1.e-0,
             u_tgt_entros=None,
         )
+    elif env_name.lower() == 'centauro':
+        algo_hyperparams = dict(
+            net_size=256,
+            use_q2=True,
+            explicit_vf=False,
+            total_iterations=500,
+            train_rollouts=3,
+            eval_rollouts=2,
+            max_horizon=500,
+            fixed_horizon=True,
+            render=False,
+            gpu_id=-1,
+            seed=610,
+
+            batch_size=256,
+            replay_buffer_size=1e6,
+
+            i_entropy_scale=1.,
+
+            auto_alpha=True,
+            # auto_alpha=False,
+            i_tgt_entro=0.e-0,
+            u_tgt_entros=None,
+        )
     else:
         raise ValueError("Wrong environment name '%s'" % env_name)
 
@@ -127,11 +152,14 @@ if __name__ == '__main__':
     env, env_params = get_normalized_env(args.env, args.task, args.seed, args.render)
 
     # Get default algorithm hyperparameters
+    default_hyperparams = get_default_hiusac_hyperparams(args.env)
     if args.algo.lower() == 'hiusac':
-        default_hyperparams = get_default_hiusac_hyperparams(args.env)
-        algorithm = HIUSAC
+        default_hyperparams['multitask'] = True
+    elif args.algo.lower() == 'sac':
+        default_hyperparams['multitask'] = False
     else:
-        raise NotImplementedError("Option %s not available" % args.algo)
+        raise NotImplementedError("Option %s for algorithm not available"
+                                  % args.algo)
 
     # Replacing default hyperparameters
     default_hyperparams['render'] = args.render
@@ -154,7 +182,7 @@ if __name__ == '__main__':
         snapshot_gap=args.snap_gap,
         log_dir=args.log_dir,
     )
-    algo = algorithm(
+    algo = HIUSAC(
         env,
         **default_hyperparams
     )

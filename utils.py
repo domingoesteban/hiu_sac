@@ -3,9 +3,10 @@ import numpy as np
 import time
 
 
-def interaction(env, policy, obs, device='cpu', **pol_kwargs):
+def interaction(env, policy, obs, device='cpu', dtype=torch.float32,
+                **pol_kwargs):
     # Get action from policy
-    action, pol_info = policy(torch_ify(obs[None], dtype=torch.float32,
+    action, pol_info = policy(torch_ify(obs[None], dtype=dtype,
                                         device=device),
                               **pol_kwargs)
 

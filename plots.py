@@ -12,10 +12,10 @@ import traceback
 def get_csv_data(csv_file, labels, space_separated=False):
     data, all_labels = get_csv_data_and_labels(csv_file,
                                                space_separated=space_separated)
-
-    for label in all_labels:
-        print(label)
-    print('***\n'*3)
+    # # Uncommont to print the labels
+    # for label in all_labels:
+    #     print(label)
+    # print('***\n'*3)
     n_data = data.shape[0]
 
     new_data = np.zeros((len(labels), n_data))
@@ -270,3 +270,79 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
                          )
 
     plt.show()
+
+
+def plot_multiple_intentions_eval_returns(
+        csv_file_dict,
+        block=False
+):
+    label_to_plot = 'Test Returns Mean'
+    label_x_axis = 'Episodes'
+    label_y_axis = 'Average Return'
+    x_major_loc = 10
+    x_minor_loc = 5
+    axis_fontsize = 50
+
+    for fig_name, fig_dict in csv_file_dict.items():
+        fig, axs = subplots(1)
+        if not isinstance(axs, np.ndarray):
+            axs = np.array([axs])
+        fig.subplots_adjust(hspace=0)
+        fig_name = fig_name.replace(" ", "_")
+        fig.canvas.set_window_title(fig_name)
+
+        ax = axs[-1]
+        lines = list()
+        labels = list()
+        for item_name, item_dict in fig_dict.items():
+            subtask = item_dict['subtask']
+
+            if subtask > -1:
+                new_label_to_plot = label_to_plot + (' [%02d]' % subtask)
+            else:
+                new_label_to_plot = label_to_plot
+            data_list = list()
+            for csv_file in item_dict['progress_files']:
+                data = get_csv_data(csv_file, [new_label_to_plot]).squeeze()
+                data_list.append(data)
+            seeded_data = np.array(data_list)
+
+            data_mean = seeded_data.mean(axis=0)
+            data_std = seeded_data.mean(axis=0)
+
+            x_data = np.arange(0, len(data_mean))
+
+            ax.fill_between(
+                x_data,
+                (data_mean - 0.5 * data_std),
+                (data_mean + 0.5 * data_std), alpha=.3)
+            mean_plot = ax.plot(x_data, data_mean)[0]
+            lines.append(mean_plot)
+
+            if item_dict['algo'].lower() == 'hiusac':
+                if subtask == -1:
+                    i_suffix = ' [I]'
+                else:
+                    i_suffix = ' [U-%02d]' % (subtask + 1)
+            else:
+                i_suffix = ''
+            labels.append(item_name + i_suffix)
+
+        xdiff = x_data[1] - x_data[0]
+        ax.set_xlim(x_data[0]-xdiff, x_data[-1] + xdiff)
+        ax.set_ylabel(label_y_axis, fontsize=axis_fontsize)
+        plt.setp(ax.get_xticklabels(), visible=False)
+        ax.xaxis.set_major_locator(plt.MultipleLocator(x_major_loc))
+        ax.xaxis.set_minor_locator(plt.MultipleLocator(x_minor_loc))
+
+        axs[-1].set_xlabel(label_x_axis, fontsize=axis_fontsize)
+        plt.setp(axs[-1].get_xticklabels(), visible=True)
+
+        legend = fig.legend(lines, labels, loc='lower right', ncol=1,
+                            # legend = fig.legend(lines, labels, loc=(-1, 0), ncol=1,
+                            labelspacing=0., prop={'size': 40})
+        fig.set_size_inches(19, 11)  # 1920 x 1080
+        fig.tight_layout()
+        legend.draggable(True)
+
+    plt.show(block=block)
