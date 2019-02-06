@@ -19,6 +19,30 @@ interaction
 MAX_LOG_ALPHA = 6.2146080984  # Alpha=500  From 09/07
 
 
+_torch_device = torch.device("cpu")  # Default device
+_torch_dtype = torch.float32  # Default dtype
+
+
+def sdevice(device):
+    global _torch_device
+    _torch_device = device
+
+
+def gdevice():
+    return _torch_device
+
+
+def sdtype(dtype):
+    if isinstance(dtype, torch.dtype):
+        raise ValueError("Wrong Torch dtype: %s!" % dtype)
+    global _torch_dtype
+    _torch_dtype = dtype
+
+
+def gdtype():
+    return _torch_dtype
+
+
 class HIUSAC:
     def __init__(
             self,
@@ -68,11 +92,13 @@ class HIUSAC:
             i_tgt_entro=None,
             u_tgt_entros=None,
 
+            multitask=True,
+
     ):
         self.use_gpu = gpu_id >= 0
-        global torch_device
         torch_device = torch.device("cuda:" + str(gpu_id) if self.use_gpu
-                                    else "cpu")
+                                     else "cpu")
+        sdevice(torch_device)
         self.seed = seed
         np.random.seed(seed)
         torch.cuda.manual_seed(seed)
@@ -81,7 +107,10 @@ class HIUSAC:
         self.env = env
         self.env.seed(seed)
 
-        self.num_intentions = self.env.n_subgoals
+        if multitask:
+            self.num_intentions = self.env.n_subgoals
+        else:
+            self.num_intentions = 0
 
         self.obs_dim = env.obs_dim
         self.action_dim = env.action_dim
@@ -99,7 +128,7 @@ class HIUSAC:
 
         # Policy Network
         self.policy = MultiPolicyNet(
-            num_intentions=self.num_intentions,
+            num_intentions=max(self.num_intentions, 1),
             obs_dim=self.obs_dim,
             action_dim=self.action_dim,
             shared_sizes=(net_size,),
@@ -204,21 +233,6 @@ class HIUSAC:
             else:
                 self.target_qf2 = None
 
-        # Move models to GPU
-        if self.use_gpu:
-            self.policy.cuda(torch_device)
-            self.qf1.cuda(torch_device)
-            if self.qf2 is not None:
-                self.qf2.cuda(torch_device)
-            if self.vf is not None:
-                self.vf.cuda(torch_device)
-            if self.target_qf1 is not None:
-                self.target_qf1.cuda(torch_device)
-            if self.target_qf2 is not None:
-                self.target_qf2.cuda(torch_device)
-            if self.target_vf is not None:
-                self.target_vf.cuda(torch_device)
-
         # Replay Buffer
         self.replay_buffer = MultiGoalReplayBuffer(
             max_size=int(replay_buffer_size),
@@ -227,6 +241,21 @@ class HIUSAC:
             num_intentions=self.num_intentions,
         )
         self.batch_size = batch_size
+
+        # Move models and replay buffer to GPU
+        self.policy.to(device=_torch_device)
+        self.qf1.to(device=_torch_device)
+        if self.qf2 is not None:
+            self.qf2.to(device=_torch_device)
+        if self.vf is not None:
+            self.vf.to(device=_torch_device)
+        if self.target_qf1 is not None:
+            self.target_qf1.to(device=_torch_device)
+        if self.target_qf2 is not None:
+            self.target_qf2.to(device=_torch_device)
+        if self.target_vf is not None:
+            self.target_vf.to(device=_torch_device)
+        self.replay_buffer.to(device=_torch_device)
 
         self.num_train_steps = 0
         self.num_train_interactions = 0
@@ -240,20 +269,20 @@ class HIUSAC:
             u_entropy_scale = [i_entropy_scale
                                for _ in range(self.num_intentions)]
         self.entropy_scales = torch.tensor(u_entropy_scale+[i_entropy_scale],
-                                           dtype=torch.float32,
-                                           device=torch_device)
+                                           dtype=_torch_dtype,
+                                           device=_torch_device)
         if i_tgt_entro is None:
             i_tgt_entro = -self.env.action_dim
         if u_tgt_entros is None:
             u_tgt_entros = [i_tgt_entro for _ in range(self.num_intentions)]
         self.tgt_entros = torch.tensor(u_tgt_entros + [i_tgt_entro],
-                                       dtype=torch.float32,
-                                       device=torch_device)
+                                       dtype=_torch_dtype,
+                                       device=_torch_device)
         self._auto_alphas = auto_alpha
         self.max_alpha = max_alpha
         self.min_alpha = min_alpha
         self.log_alphas = torch.zeros(self.num_intentions+1,
-                                      device=torch_device,
+                                      device=_torch_device,
                                       requires_grad=True)
 
         # ########## #
@@ -325,13 +354,14 @@ class HIUSAC:
         ):
             for rollout in range(self.train_rollouts):
                 obs = self.env.reset()
-                obs = torch_ify(obs, device=torch_device, dtype=torch.float32)
+                obs = torch_ify(obs, device=_torch_device, dtype=_torch_dtype)
                 for step in range(self.max_horizon):
                     if self.render:
                         self.env.render()
                     interaction_info = interaction(
                         self.env, self.policy, obs,
-                        device=torch_device,
+                        device=_torch_device,
+                        dtype=_torch_dtype,
                         intention=None, deterministic=False,
                     )
                     self.num_train_interactions += 1
@@ -340,25 +370,25 @@ class HIUSAC:
                     # Get useful info from interaction
                     next_obs = torch_ify(
                         interaction_info['next_obs'],
-                        device=torch_device, dtype=torch.float32
+                        device=_torch_device, dtype=_torch_dtype
                     )
                     action = interaction_info['action']
                     reward = torch_ify(
                         interaction_info['reward'],
-                        device=torch_device, dtype=torch.float32
+                        device=_torch_device, dtype=_torch_dtype
                     )
                     done = torch_ify(
                         interaction_info['done'],
-                        device=torch_device, dtype=torch.float32
+                        device=_torch_device, dtype=_torch_dtype
                     )
                     reward_vector = torch_ify(
                         interaction_info['reward_vector'],
-                        device=torch_device, dtype=torch.float32
-                    )
+                        device=_torch_device, dtype=_torch_dtype
+                    ).squeeze()
                     done_vector = torch_ify(
                         interaction_info['done_vector'],
-                        device=torch_device, dtype=torch.float32
-                    )
+                        device=_torch_device, dtype=_torch_dtype
+                    ).squeeze()
 
                     # Add data to replay_buffer
                     self.replay_buffer.add_sample(obs,
@@ -379,8 +409,8 @@ class HIUSAC:
                     # Reset environment if it is done
                     if done:
                         obs = self.env.reset()
-                        obs = torch_ify(obs, device=torch_device,
-                                        dtype=torch.float32)
+                        obs = torch_ify(obs, device=_torch_device,
+                                        dtype=_torch_dtype)
                     else:
                         obs = next_obs
 
@@ -391,21 +421,23 @@ class HIUSAC:
             self.num_iters += 1
 
     def eval(self):
-        for rr in range(self.eval_rollouts):
-            rollout_info = rollout(self.env, self.policy,
-                                   max_horizon=self.max_horizon,
-                                   fixed_horizon=self.fixed_horizon,
-                                   render=self.render,
-                                   return_info=True,
-                                   device=torch_device,
-                                   deterministic=True,
-                                   intention=None)
+        for ii in range(-1, self.num_intentions):
+            for rr in range(self.eval_rollouts):
+                rollout_info = rollout(self.env, self.policy,
+                                       max_horizon=self.max_horizon,
+                                       fixed_horizon=self.fixed_horizon,
+                                       render=self.render,
+                                       return_info=True,
+                                       device=_torch_device,
+                                       deterministic=True,
+                                       intention=None if ii == -1 else ii)
 
-            for step in range(len(rollout_info['reward'])):
-                self.log_eval_rewards[rr, -1, step] = \
-                    rollout_info['reward'][step]
-                self.log_eval_rewards[rr, :self.num_intentions, step] = \
-                    rollout_info['reward_vector'][step]
+                for step in range(len(rollout_info['reward'])):
+                    self.log_eval_rewards[rr, ii, step] = \
+                        rollout_info['reward'][step]
+                    if self.num_intentions > 0:
+                        self.log_eval_rewards[rr, :self.num_intentions, step] = \
+                            rollout_info['reward_vector'][step].squeeze()
         gt.stamp('eval')
 
     def learn(self):
@@ -418,14 +450,20 @@ class HIUSAC:
         next_obs = batch['next_observations']
 
         # Concatenate all rewards
-        i_reward = batch['rewards'].unsqueeze(-1)
-        u_rewards = batch['reward_vectors'].unsqueeze(-1)
-        hiu_rewards = torch.cat((u_rewards, i_reward), dim=1)
+        i_rewards = batch['rewards'].unsqueeze(-1)
+        if self.num_intentions > 0:
+            u_rewards = batch['reward_vectors'].unsqueeze(-1)
+            hiu_rewards = torch.cat((u_rewards, i_rewards), dim=1)
+        else:
+            hiu_rewards = i_rewards
 
         # Concatenate all terminals
         i_terminals = batch['terminals'].unsqueeze(-1)
-        u_terminals = batch['terminal_vectors'].unsqueeze(-1)
-        hiu_terminals = torch.cat((u_terminals, i_terminals), dim=1)
+        if self.num_intentions > 0:
+            u_terminals = batch['terminal_vectors'].unsqueeze(-1)
+            hiu_terminals = torch.cat((u_terminals, i_terminals), dim=1)
+        else:
+            hiu_terminals = i_terminals
 
         # One pass for both s and s' instead of two
         obs_combined = torch.cat((obs, next_obs), dim=0)
@@ -443,17 +481,27 @@ class HIUSAC:
         i_next_log_pi = policy_info['log_prob'][self.batch_size:].detach()
 
         # Unintentional policy info
-        u_new_actions = policy_info['action_vect'][:self.batch_size]
-        u_next_actions = policy_info['action_vect'][self.batch_size:].detach()
-        u_new_log_pi = policy_info['log_probs'][:self.batch_size]
-        u_next_log_pi = policy_info['log_probs'][self.batch_size:].detach()
+        if self.num_intentions > 0:
+            u_new_actions = policy_info['action_vect'][:self.batch_size]
+            u_next_actions = policy_info['action_vect'][self.batch_size:].detach()
+            u_new_log_pi = policy_info['log_probs'][:self.batch_size]
+            u_next_log_pi = policy_info['log_probs'][self.batch_size:].detach()
+        else:
+            u_new_actions = None
+            u_next_actions = None
+            u_new_log_pi = None
+            u_next_log_pi = None
 
         # Additional info
         i_new_mean = policy_info['mean'][:self.batch_size]
-        u_new_means = policy_info['means'][:self.batch_size]
         i_new_log_std = policy_info['log_std'][:self.batch_size]
-        u_new_log_stds = policy_info['log_stds'][:self.batch_size]
-        activation_weights = policy_info['activation_weights'][:self.batch_size]
+        u_new_means = policy_info['means'][:self.batch_size]
+        if self.num_intentions > 0:
+            u_new_log_stds = policy_info['log_stds'][:self.batch_size]
+            activation_weights = policy_info['activation_weights'][:self.batch_size]
+        else:
+            u_new_log_stds = None
+            activation_weights = None
 
         # Alphas
         # alphas = self.entropy_scales*torch.clamp(self.log_alphas,
@@ -463,7 +511,7 @@ class HIUSAC:
         alphas.unsqueeze_(dim=-1)
 
         intention_mask = torch.eye(self.num_intentions + 1,
-                                   dtype=torch.float32, device=torch_device
+                                   dtype=_torch_dtype, device=_torch_device
                                    ).unsqueeze(-1)
 
         hiu_obs = obs.unsqueeze(-2).expand(
@@ -477,25 +525,37 @@ class HIUSAC:
         )
 
         # New actions (from current obs)
-        hiu_new_actions = torch.cat(
-            (u_new_actions, i_new_actions.unsqueeze(-2)),
-            dim=-2
-        )
+        if u_new_actions is None:
+            hiu_new_actions = i_new_actions.unsqueeze(-2)
+        else:
+            hiu_new_actions = torch.cat(
+                (u_new_actions, i_new_actions.unsqueeze(-2)),
+                dim=-2
+            )
 
-        hiu_next_actions = torch.cat(
-            (u_next_actions, i_next_actions.unsqueeze(-2)),
-            dim=-2
-        )
+        if u_new_actions is None:
+            hiu_next_actions = i_next_actions.unsqueeze(-2)
+        else:
+            hiu_next_actions = torch.cat(
+                (u_next_actions, i_next_actions.unsqueeze(-2)),
+                dim=-2
+            )
 
-        hiu_next_log_pi = torch.cat(
-            (u_next_log_pi, i_next_log_pi.unsqueeze(-2)),
-            dim=-2
-        )
+        if u_new_actions is None:
+            hiu_next_log_pi = i_next_log_pi.unsqueeze(-2)
+        else:
+            hiu_next_log_pi = torch.cat(
+                (u_next_log_pi, i_next_log_pi.unsqueeze(-2)),
+                dim=-2
+            )
 
-        hiu_new_log_pi = torch.cat(
-            (u_new_log_pi, i_new_log_pi.unsqueeze(-2)),
-            dim=-2
-        )
+        if u_new_actions is None:
+            hiu_new_log_pi = i_new_log_pi.unsqueeze(-2)
+        else:
+            hiu_new_log_pi = torch.cat(
+                (u_new_log_pi, i_new_log_pi.unsqueeze(-2)),
+                dim=-2
+            )
 
         # ####################### #
         # Policy Improvement Step #
@@ -642,11 +702,12 @@ class HIUSAC:
         # ######## #
         self.log_policies_error = policy_loss.item()
         self.log_values_error = values_loss.item()
-        self.log_means[:self.num_intentions] = np_ify(u_new_means.mean(dim=0))
         self.log_means[-1] = np_ify(i_new_mean.mean(dim=0))
-        self.log_stds[:self.num_intentions] = np_ify(u_new_log_stds.exp().mean(dim=0))
         self.log_stds[-1] = np_ify(i_new_log_std.exp().mean(dim=0))
-        self.log_weights = np_ify(activation_weights.mean(dim=0))
+        if self.num_intentions > 0:
+            self.log_means[:self.num_intentions] = np_ify(u_new_means.mean(dim=0))
+            self.log_stds[:self.num_intentions] = np_ify(u_new_log_stds.exp().mean(dim=0))
+            self.log_weights = np_ify(activation_weights.mean(dim=0))
 
     def save(self):
         snapshot_gap = logger.get_snapshot_gap()
@@ -752,14 +813,19 @@ class HIUSAC:
                     self.log_weights[intention, aa]
 
         # Evaluation Stats to plot
-        statistics["Test Rewards Mean"] = \
-            self.log_eval_rewards[:, -1, :].mean()
-        statistics["Test Rewards Std"] = \
-            self.log_eval_rewards[:, -1, :].std()
-        statistics["Test Returns Mean"] = \
-            np.sum(self.log_eval_rewards[:, -1, :], axis=-1).mean(axis=0)
-        statistics["Test Returns Std"] = \
-            np.sum(self.log_eval_rewards[:, -1, :], axis=-1).std(axis=0)
+        for ii in range(-1, self.num_intentions):
+            if ii > -1:
+                uu_str = ' [%02d]' % ii
+            else:
+                uu_str = ''
+            statistics["Test Rewards Mean"+uu_str] = \
+                self.log_eval_rewards[:, ii, :].mean()
+            statistics["Test Rewards Std"+uu_str] = \
+                self.log_eval_rewards[:, ii, :].std()
+            statistics["Test Returns Mean"+uu_str] = \
+                np.sum(self.log_eval_rewards[:, ii, :], axis=-1).mean(axis=0)
+            statistics["Test Returns Std"+uu_str] = \
+                np.sum(self.log_eval_rewards[:, ii, :], axis=-1).std(axis=0)
 
         # Add Tabular data to logger
         for key, value in statistics.items():
@@ -792,41 +858,53 @@ class HIUSAC:
         logger.log("----")
 
 
-class MultiGoalReplayBuffer:
+class MultiGoalReplayBuffer(torch.nn.Module):
     def __init__(self, max_size, obs_dim, action_dim, num_intentions):
         if not max_size > 1:
             raise ValueError("Invalid Maximum Replay Buffer Size: {}".format(
                 max_size)
             )
-        if not num_intentions > 0:
+        if not num_intentions >= 0:
             raise ValueError("Invalid Num Intentions Size: {}".format(
                 num_intentions)
             )
+        super(MultiGoalReplayBuffer, self).__init__()
 
         max_size = int(max_size)
-        multi_size = int(num_intentions)
+        num_intentions = int(num_intentions)
 
-        self.obs_buffer = torch.zeros((max_size, obs_dim),
-                                      dtype=torch.float32,
-                                      device=torch_device)
-        self.next_obs_buffer = torch.zeros((max_size, obs_dim),
-                                           dtype=torch.float32,
-                                           device=torch_device)
-        self.acts_buffer = torch.zeros((max_size, action_dim),
-                                       dtype=torch.float32,
-                                       device=torch_device)
-        self.rewards_buffer = torch.zeros((max_size, 1),
-                                          dtype=torch.float32,
-                                          device=torch_device)
-        self.terminals_buffer = torch.zeros((max_size, 1),
-                                            dtype=torch.float32,
-                                            device=torch_device)
-        self.rew_vects_buffer = torch.zeros((max_size, multi_size),
-                                            dtype=torch.float32,
-                                            device=torch_device)
-        self.term_vects_buffer = torch.zeros((max_size, multi_size),
-                                             dtype=torch.float32,
-                                             device=torch_device)
+        self.register_buffer(
+            'obs_buffer',
+            torch.zeros((max_size, obs_dim))
+        )
+        self.register_buffer(
+            'next_obs_buffer',
+            torch.zeros((max_size, obs_dim))
+        )
+        self.register_buffer(
+            'acts_buffer',
+            torch.zeros((max_size, action_dim))
+        )
+        self.register_buffer(
+            'rewards_buffer',
+            torch.zeros((max_size, 1))
+        )
+        self.register_buffer(
+            'terminals_buffer',
+            torch.zeros((max_size, 1))
+        )
+        if num_intentions > 0:
+            self.register_buffer(
+                'rew_vects_buffer',
+                torch.zeros((max_size, num_intentions))
+            )
+            self.register_buffer(
+                'term_vects_buffer',
+                torch.zeros((max_size, num_intentions))
+            )
+        else:
+            self.rew_vects_buffer = None
+            self.term_vects_buffer = None
 
         self._obs_dim = obs_dim
         self._action_dim = action_dim
@@ -835,14 +913,19 @@ class MultiGoalReplayBuffer:
         self._size = 0
 
     def add_sample(self, obs, action, reward, terminal,
-                   next_obs, rew_vector, term_vector):
+                   next_obs, rew_vector=None, term_vector=None):
         self.obs_buffer[self._top] = obs
         self.acts_buffer[self._top] = action
         self.rewards_buffer[self._top] = reward
         self.terminals_buffer[self._top] = terminal
         self.next_obs_buffer[self._top] = next_obs
-        self.rew_vects_buffer[self._top] = rew_vector
-        self.term_vects_buffer[self._top] = term_vector
+
+        # Update reward vector and terminal vector buffers if applicable
+        if self.rew_vects_buffer is not None:
+            self.rew_vects_buffer[self._top] = rew_vector
+        if self.term_vects_buffer is not None:
+            self.term_vects_buffer[self._top] = term_vector
+
         self._advance()
 
     def _advance(self):
@@ -856,16 +939,27 @@ class MultiGoalReplayBuffer:
                                  'current %d!' % (batch_size, self._size))
 
         indices = torch.randint(0, self._size, (batch_size,), dtype=torch.long,
-                                device=torch_device)
-        return dict(
+                                device=_torch_device)
+        batch_dict = dict(
             observations=self.buffer_index(self.obs_buffer, indices),
             actions=self.buffer_index(self.acts_buffer, indices),
             rewards=self.buffer_index(self.rewards_buffer, indices),
             terminals=self.buffer_index(self.terminals_buffer, indices),
             next_observations=self.buffer_index(self.next_obs_buffer, indices),
-            reward_vectors=self.buffer_index(self.rew_vects_buffer, indices),
-            terminal_vectors=self.buffer_index(self.term_vects_buffer, indices),
         )
+        # Return reward vector and terminal vector buffers if applicable
+        if self.rew_vects_buffer is None:
+            batch_dict['reward_vectors'] = None
+        else:
+            batch_dict['reward_vectors'] = \
+                self.buffer_index(self.rew_vects_buffer, indices)
+        if self.term_vects_buffer is None:
+            batch_dict['terminal_vectors'] = None
+        else:
+            batch_dict['terminal_vectors'] = \
+                self.buffer_index(self.term_vects_buffer, indices)
+
+        return batch_dict
 
     def available_samples(self):
         return self._size
@@ -880,3 +974,41 @@ def soft_update_from_to(source, target, tau):
         target_param.data.copy_(
             target_param.data * (1.0 - tau) + source_param.data * tau
         )
+
+
+if __name__ == '__main__':
+    torch.cuda.manual_seed(500)
+    torch.manual_seed(500)
+
+    obs_dim = 10
+    act_dim = 4
+    buffer_size = 100
+    unintentions_size = 3
+    # device = 'cuda:0'
+    device = 'cpu'
+
+    # Simple replay buffer
+    simple_replay_buffer = MultiGoalReplayBuffer(
+        max_size=buffer_size,
+        obs_dim=obs_dim,
+        action_dim=act_dim,
+        num_intentions=0,
+    )
+    simple_replay_buffer.to(device=device, dtype=torch.float64)
+    print("\n*****"*2)
+    print("Simple replay buffer")
+    for name, buffer in simple_replay_buffer.named_buffers():
+        print(name, buffer.shape, buffer.is_cuda, buffer.dtype)
+
+    # Multigoal replay buffer
+    multigoal_replay_buffer = MultiGoalReplayBuffer(
+        max_size=buffer_size,
+        obs_dim=obs_dim,
+        action_dim=act_dim,
+        num_intentions=unintentions_size,
+    )
+    multigoal_replay_buffer.to(device=device, dtype=torch.float64)
+    print("\n*****"*2)
+    print("Multigoal replay buffer")
+    for name, buffer in multigoal_replay_buffer.named_buffers():
+        print(name, buffer.shape, buffer.is_cuda, buffer.dtype)
