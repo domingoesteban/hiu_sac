@@ -200,3 +200,6 @@ class NormalizedEnv:
     @property
     def name(self):
         return type(self._wrapped_env).__name__
+
+    def set_subtask(self, subtask):
+        self._wrapped_env.set_subtask(subtask)

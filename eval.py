@@ -101,7 +101,13 @@ if __name__ == '__main__':
 
     while True:
         user_input = input("Select an option "
-                           "('p':plot progress, 'e':evaluate, 'v':plot_qval). "
+                           "("
+                           "'p':plot progress, "
+                           "'e':evaluate, "
+                           "'v':plot_qval,"
+                           "'t':change policy task,"
+                           "'et':change env task,"
+                           "). "
                            "Or 'q' to exit: ")
         # user_input = 'e'
         if user_input.lower() == 'q':
@@ -111,6 +117,20 @@ if __name__ == '__main__':
             plot_progress(progress_file)
         elif user_input.lower() == 'v':
             plot_value_fcn(qf, policy, env)
+        elif user_input.lower() == 't':
+            new_task = input("Specify task id (-1 for None). Task id: ")
+            new_task = int(new_task)
+            if new_task not in list(range(-1, policy.num_intentions)):
+                print("Wrong option '%s'!" % new_task)
+            args.task = None if new_task == -1 else new_task
+            print("New task is %d" % new_task)
+        elif user_input.lower() == 'et':
+            new_task = input("Specify env_task id (-1 for None). Task id: ")
+            new_task = int(new_task)
+            if new_task not in list(range(-1, env.n_subgoals)):
+                print("Wrong option '%s'!" % new_task)
+            new_task = None if new_task == -1 else new_task
+            env.set_subtask(new_task)
         elif user_input.lower() == 'e':
             if args.horizon is not None:
                 horizon = args.horizon
