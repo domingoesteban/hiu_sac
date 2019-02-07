@@ -93,6 +93,8 @@ class HIUSAC:
             u_tgt_entros=None,
 
             multitask=True,
+            norm_input_pol=False,
+            norm_input_vfs=False,
 
     ):
         self.use_gpu = gpu_id >= 0
@@ -126,6 +128,9 @@ class HIUSAC:
         self.soft_target_tau = soft_target_tau
         self.target_update_interval = target_update_interval
 
+        self.norm_input_pol = norm_input_pol
+        self.norm_input_vfs = norm_input_vfs
+
         # Policy Network
         self.policy = MultiPolicyNet(
             num_intentions=max(self.num_intentions, 1),
@@ -140,6 +145,7 @@ class HIUSAC:
             # intention_non_linear='elu',
             intention_final_non_linear='linear',
             intention_batch_norm=False,
+            normalize_inputs=norm_input_pol,
         )
 
         # Value Function Networks
@@ -154,6 +160,7 @@ class HIUSAC:
             intention_non_linear='relu',
             intention_final_non_linear='linear',
             intention_batch_norm=False,
+            normalize_inputs=norm_input_vfs,
         )
         if use_q2:
             self.qf2 = MultiQNet(
@@ -167,6 +174,7 @@ class HIUSAC:
                 intention_non_linear='relu',
                 intention_final_non_linear='linear',
                 intention_batch_norm=False,
+                normalize_inputs=norm_input_vfs,
             )
         else:
             self.qf2 = None
@@ -182,6 +190,7 @@ class HIUSAC:
                 intention_non_linear='relu',
                 intention_final_non_linear='linear',
                 intention_batch_norm=False,
+                normalize_inputs=norm_input_vfs,
             )
             self.target_vf = MultiVNet(
                 num_intentions=self.num_intentions + 1,
@@ -193,6 +202,7 @@ class HIUSAC:
                 intention_non_linear='relu',
                 intention_final_non_linear='linear',
                 intention_batch_norm=False,
+                normalize_inputs=norm_input_vfs,
             )
             self.target_vf.load_state_dict(self.vf.state_dict())
             self.target_vf.eval()
@@ -212,6 +222,7 @@ class HIUSAC:
                 intention_non_linear='relu',
                 intention_final_non_linear='linear',
                 intention_batch_norm=False,
+                normalize_inputs=norm_input_vfs,
             )
             self.target_qf1.load_state_dict(self.qf1.state_dict())
             self.target_qf1.eval()
@@ -227,6 +238,7 @@ class HIUSAC:
                     intention_non_linear='relu',
                     intention_final_non_linear='linear',
                     intention_batch_norm=False,
+                    normalize_inputs=norm_input_vfs,
                 )
                 self.target_qf2.load_state_dict(self.qf2.state_dict())
                 self.target_qf2.eval()
@@ -343,6 +355,20 @@ class HIUSAC:
             self.eval_rollouts, self.num_intentions + 1, self.max_horizon
         ))
 
+    @property
+    def learning_models(self):
+        models = [
+            self.policy,
+            self.qf1,
+        ]
+        if self.qf2 is not None:
+            models.append(self.qf2)
+
+        if self.vf is not None:
+            models.append(self.vf)
+
+        return models
+
     def train(self, init_iteration=0):
 
         gt.reset()
@@ -352,6 +378,10 @@ class HIUSAC:
                 range(init_iteration, self.total_iterations),
                 save_itrs=True,
         ):
+            # Put models in training mode
+            for model in self.learning_models:
+                model.train()
+
             for rollout in range(self.train_rollouts):
                 obs = self.env.reset()
                 obs = torch_ify(obs, device=_torch_device, dtype=_torch_dtype)
@@ -421,6 +451,10 @@ class HIUSAC:
             self.num_iters += 1
 
     def eval(self):
+        # Put models in evaluation mode
+        for model in self.learning_models:
+            model.eval()
+
         for ii in range(-1, self.num_intentions):
             for rr in range(self.eval_rollouts):
                 rollout_info = rollout(self.env, self.policy,
@@ -676,22 +710,39 @@ class HIUSAC:
         # ########################### #
         if self.num_train_steps % self.target_update_interval == 0:
             if self.target_vf is None:
-                soft_update_from_to(
+                soft_param_update_from_to(
                     source=self.qf1,
                     target=self.target_qf1,
                     tau=self.soft_target_tau
                 )
                 if self.target_qf2 is not None:
-                    soft_update_from_to(
+                    soft_param_update_from_to(
                         source=self.qf2,
                         target=self.target_qf2,
                         tau=self.soft_target_tau
                     )
             else:
-                soft_update_from_to(
+                soft_param_update_from_to(
                     source=self.vf,
                     target=self.target_vf,
                     tau=self.soft_target_tau
+                )
+        # Always update buffers
+        if self.norm_input_vfs:
+            if self.target_vf is None:
+                hard_buffer_update_from_to(
+                    source=self.qf1,
+                    target=self.target_qf1,
+                )
+                if self.target_qf2 is not None:
+                    hard_buffer_update_from_to(
+                        source=self.qf2,
+                        target=self.target_qf2,
+                    )
+            else:
+                hard_buffer_update_from_to(
+                    source=self.vf,
+                    target=self.target_vf,
                 )
 
         # Increase internal counter
@@ -969,11 +1020,24 @@ class MultiGoalReplayBuffer(torch.nn.Module):
         return torch.index_select(buffer, dim=0, index=indices)
 
 
-def soft_update_from_to(source, target, tau):
+def soft_param_update_from_to(source, target, tau):
+    """
+
+    :param source:
+    :param target:
+    :param tau:
+    :return:
+    """
     for target_param, source_param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(
             target_param.data * (1.0 - tau) + source_param.data * tau
         )
+
+
+def hard_buffer_update_from_to(source, target):
+    # Buffers should be hard copy
+    for target_buff, source_buff in zip(target.buffers(), source.buffers()):
+        target_buff.data.copy_(source_buff.data)
 
 
 if __name__ == '__main__':

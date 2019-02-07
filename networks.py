@@ -1,5 +1,6 @@
 import torch
 import math
+from functools import reduce
 
 LOG_SIG_MAX = 2
 # LOG_SIG_MIN = -20
@@ -167,9 +168,11 @@ class MultiValueNet(torch.nn.Module):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
+                 normalize_inputs=False,
                  ):
         super(MultiValueNet, self).__init__()
 
+        self.input_dim = input_dim
         self.shared_non_linear_name = shared_non_linear
         self.shared_batch_norm = shared_batch_norm
 
@@ -202,6 +205,11 @@ class MultiValueNet(torch.nn.Module):
             self.critic_nets.append(critic_net)
             self.add_module('intention{}'.format(ii), critic_net)
 
+        if normalize_inputs:
+            self.add_module('input_normalization', Normalizer(self.input_dim))
+        else:
+            self.input_normalization = None
+
     def init_weights(self, init_fcn='uniform'):
         if init_fcn.lower() == 'uniform':
             init_fcn = torch.nn.init.xavier_uniform_
@@ -218,6 +226,12 @@ class MultiValueNet(torch.nn.Module):
             torch.nn.init.constant_(layer.bias.data, 0)
 
     def forward(self, x, intention=None):
+        if self.input_normalization is not None:
+            init_shape = x.shape
+            x = x.view(-1, self.input_dim)
+            x = self.input_normalization(x)
+            x = x.view(init_shape)
+
         for ll in range(len(self.shared_layers)):
             x = self.shared_non_linear(self.shared_layers[ll](x))
             if self.shared_batch_norm:
@@ -250,6 +264,7 @@ class MultiQNet(MultiValueNet):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
+                 normalize_inputs=False,
                  ):
         self.input_dim = obs_dim + action_dim
         super(MultiQNet, self).__init__(
@@ -262,6 +277,7 @@ class MultiQNet(MultiValueNet):
             intention_non_linear=intention_non_linear,
             intention_final_non_linear=intention_final_non_linear,
             intention_batch_norm=intention_batch_norm,
+            normalize_inputs=normalize_inputs,
         )
 
     def forward(self, observation, action, intention=None):
@@ -280,6 +296,7 @@ class MultiVNet(MultiValueNet):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
+                 normalize_inputs=False,
                  ):
         self.input_dim = obs_dim
         super(MultiVNet, self).__init__(
@@ -292,6 +309,7 @@ class MultiVNet(MultiValueNet):
             intention_non_linear=intention_non_linear,
             intention_final_non_linear=intention_final_non_linear,
             intention_batch_norm=intention_batch_norm,
+            normalize_inputs=normalize_inputs,
         )
 
     def forward(self, observation, intention=None):
@@ -314,9 +332,11 @@ class MultiPolicyNet(torch.nn.Module):
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
                  combination_method='convex',
+                 normalize_inputs=False
                  ):
         super(MultiPolicyNet, self).__init__()
 
+        self.obs_dim = obs_dim
         self.action_dim = action_dim
         self.num_intentions = num_intentions
         self.shared_non_linear_name = shared_non_linear
@@ -377,6 +397,11 @@ class MultiPolicyNet(torch.nn.Module):
         else:
             self.combination_non_linear = get_non_linear_op('linear')
 
+        if normalize_inputs:
+            self.add_module('input_normalization', Normalizer(obs_dim))
+        else:
+            self.input_normalization = None
+
         # Initialize weights
         self.init_weights('uniform')
 
@@ -401,6 +426,11 @@ class MultiPolicyNet(torch.nn.Module):
         if log_prob and deterministic:
             raise ValueError("It is not possible to calculate log_probs in"
                              "deterministic policies")
+        if self.input_normalization is not None:
+            init_shape = observation.shape
+            observation = observation.view(-1, self.obs_dim)
+            observation = self.input_normalization(observation)
+            observation = observation.view(init_shape)
 
         x = observation
         for ll in range(len(self.shared_layers)):
@@ -521,6 +551,8 @@ class MultiPolicyNet(torch.nn.Module):
         pol_info['log_std'] = log_std
         pol_info['stds'] = stds
         pol_info['std'] = std
+        pol_info['variances'] = variances
+        pol_info['variance'] = variance
 
         return action, pol_info
 
@@ -552,9 +584,107 @@ def clip_but_pass_gradient(x, l=-1., u=1.):
     return x + ((u - x)*clip_up + (l - x)*clip_low).detach()
 
 
+class Normalizer(torch.nn.Module):
+    def __init__(
+            self,
+            size,
+            eps=1e-8,
+            default_clip_range=math.inf,
+            mean=0,
+            std=1,
+    ):
+        super(Normalizer, self).__init__()
+        self.size = size
+        self.default_clip_range = default_clip_range
+
+        self.register_buffer('sum', torch.zeros((self.size,)))
+        self.register_buffer('sumsq', torch.zeros((self.size,)))
+        self.register_buffer('count', torch.zeros((1,)))
+        self.register_buffer('mean', mean + torch.zeros((self.size,)))
+        self.register_buffer('std', std * torch.ones((self.size,)))
+        self.register_buffer('eps', eps * torch.ones((self.size,)))
+
+        self.synchronized = True
+
+    def forward(self, x):
+        if self.training:
+            self.update(x)
+
+        x = self.normalize(x)
+
+        return x
+
+    def update(self, v):
+        if v.dim() == 1:
+            v = v.expand(0)
+        assert v.dim() == 2
+        assert v.shape[1] == self.size
+        self.sum += v.sum(dim=0)
+        self.sumsq += (v**2).sum(dim=0)
+        self.count[0] += v.shape[0]
+        self.synchronized = False
+
+    def normalize(self, v, clip_range=None):
+        if not self.synchronized:
+            self.synchronize()
+        if clip_range is None:
+            clip_range = self.default_clip_range
+        mean, std = self.mean, self.std
+        if v.dim() == 2:
+            mean = mean.reshape(1, -1)
+            std = std.reshape(1, -1)
+        return torch.clamp((v - mean) / std, -clip_range, clip_range)
+
+    def denormalize(self, v):
+        if not self.synchronized:
+            self.synchronize()
+        mean, std = self.mean, self.std
+        if v.dim() == 2:
+            mean = mean.reshape(1, -1)
+            std = std.reshape(1, -1)
+        return mean + v * std
+
+    def synchronize(self):
+        self.mean.data = self.sum / self.count[0]
+        self.std.data = torch.sqrt(
+            torch.max(
+                self.eps**2,
+                self.sumsq / self.count[0] - self.mean**2
+            )
+        )
+        self.synchronized = True
+
+
 if __name__ == '__main__':
     torch.cuda.manual_seed(500)
     torch.manual_seed(500)
+
+    obs_dim = 2
+    batch = 1
+
+    # device = 'cuda:0'
+    device = 'cpu'
+
+    normalizer = Normalizer(obs_dim)
+    normalizer.to(device)
+
+    for ii in range(500):
+        obs1 = torch.FloatTensor(batch, 1).uniform_(10, 50).to(device)
+        obs2 = torch.FloatTensor(batch, 1).uniform_(-3000, -1000).to(device)
+
+        cosa = torch.cat((obs1, obs2), dim=1)
+
+        print('prev_mean', cosa.mean(dim=0))
+        print('prev_std', cosa.std(dim=0))
+
+        cosa = normalizer(cosa)
+        print('after_mean', cosa.mean(dim=0))
+        print('after_norm.mean',  normalizer.mean)
+        print('after_std', cosa.std(dim=0))
+        print('after_norm.std',  normalizer.std)
+        print('--')
+
+    input('fasd')
 
     # print('&&&\n'*2)
     # print("Check Intention Network")
@@ -618,6 +748,7 @@ if __name__ == '__main__':
         intention_non_linear='relu',
         intention_final_non_linear='linear',
         intention_batch_norm=False,
+        normalize_inputs=True,
     )
     print('Architecture:\n', policy)
     print('Named parameters:')

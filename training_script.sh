@@ -4,10 +4,10 @@
 # VARS #
 # #### #
 gpu_id=${1-cpu}
-env_name='navigation2d'
+#env_name='navigation2d'
 #env_name='reacher'
 #env_name='pusher'
-#env_name='centauro'
+env_name='centauro'
 #algo_name='hiusac'
 algo_name='sac'
 dir_prefix=${algo_name}
@@ -17,14 +17,14 @@ python_script=${env_name}'_'${algo_name}
 log_dir_path='./logs/'${env_name}'/'
 
 #seeds=(610 710 810 910 1010)
-seeds=(610 810 1010)
+#seeds=(610 810 1010)
 #seeds=(810 1010)
-#seeds=(610)
+seeds=(610)
 total_seeds=${#seeds[@]}
 
-subtasks=(0 1 -1)
+#subtasks=(0 1 -1)
 #subtasks=(0 1)
-#subtasks=(-1)
+subtasks=(-1)
 #subtasks=("${@:-${default_subtasks[@]}}")
 total_subtasks=${#subtasks[@]}
 

@@ -1,9 +1,7 @@
-import os.path as osp
 import argparse
 from pathlib import Path
 import sys
 
-import envs
 from hiu_sac import HIUSAC
 from logger.logger import setup_logger
 from envs import get_normalized_env
@@ -61,6 +59,8 @@ def get_default_hiusac_hyperparams(env_name):
             i_tgt_entro=0.e-1,
             u_tgt_entros=None,
 
+            norm_input_pol=False,
+            norm_input_vfs=False,
         )
     elif env_name.lower() == 'reacher':
         algo_hyperparams = dict(
@@ -86,6 +86,9 @@ def get_default_hiusac_hyperparams(env_name):
             # i_tgt_entro=None,
             i_tgt_entro=1.e-0,
             u_tgt_entros=None,
+
+            norm_input_pol=False,
+            norm_input_vfs=False,
         )
     elif env_name.lower() == 'pusher':
         algo_hyperparams = dict(
@@ -110,16 +113,19 @@ def get_default_hiusac_hyperparams(env_name):
             # auto_alpha=False,
             i_tgt_entro=1.e-0,
             u_tgt_entros=None,
+
+            norm_input_pol=False,
+            norm_input_vfs=False,
         )
     elif env_name.lower() == 'centauro':
         algo_hyperparams = dict(
             net_size=256,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=500,
-            train_rollouts=3,
-            eval_rollouts=2,
-            max_horizon=500,
+            total_iterations=1000,
+            train_rollouts=5,
+            eval_rollouts=3,
+            max_horizon=1000,
             fixed_horizon=True,
             render=False,
             gpu_id=-1,
@@ -132,8 +138,11 @@ def get_default_hiusac_hyperparams(env_name):
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=0.e-0,
-            u_tgt_entros=None,
+            i_tgt_entro=0.e+0,
+            u_tgt_entros=[0.e+0, 0e+0],
+
+            norm_input_pol=False,
+            norm_input_vfs=False,
         )
     else:
         raise ValueError("Wrong environment name '%s'" % env_name)
