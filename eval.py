@@ -1,3 +1,4 @@
+import numpy as np
 import argparse
 from pathlib import Path
 import sys
@@ -13,6 +14,9 @@ from utils import interaction
 from utils import rollout
 import plots
 
+# Numpy print options
+np.set_printoptions(precision=3, suppress=True)
+
 # Add local files to path
 root_dir = Path.cwd()
 sys.path.append(str(root_dir))
@@ -25,11 +29,13 @@ parser.add_argument('--seed', '-s', type=int, default=610,
                     help='Seed value [default: 610]')
 parser.add_argument('--task', '-t', type=int, default=None,
                     help='Task number [default: None (Main task)]')
-parser.add_argument('--horizon', '-o', type=int, default=None,
+parser.add_argument('--horizon', '-n', type=int, default=None,
                     help='Rollout horizon [default: 100]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
 parser.add_argument('--stochastic', action='store_true')
+parser.add_argument('--option', '-o', type=str, default=None,
+                    help='Script option [default: None]')
 
 
 def plot_progress(progress_file):
@@ -99,16 +105,21 @@ if __name__ == '__main__':
     policy = torch.load(policy_file).cpu()
     qf = torch.load(qf_file).cpu()
 
+    first_time = True
     while True:
-        user_input = input("Select an option "
-                           "("
-                           "'p':plot progress, "
-                           "'e':evaluate, "
-                           "'v':plot_qval,"
-                           "'t':change policy task,"
-                           "'et':change env task,"
-                           "). "
-                           "Or 'q' to exit: ")
+        if not first_time or args.option is None:
+            user_input = input("Select an option: \n"
+                               "\t'p':plot progress\n"
+                               "\t'v':plot_qval\n"
+                               "\t't':change policy task\n"
+                               "\t'et':change env task\n"
+                               "\t'h':change evaluation horizon\n"
+                               "\t'e':evaluate\n"
+                               "\t'q' to exit\n"
+                               "Option: ")
+        else:
+            user_input = args.option
+            first_time = False
         # user_input = 'e'
         if user_input.lower() == 'q':
             print("Closing the script. Bye!")
@@ -129,8 +140,17 @@ if __name__ == '__main__':
             new_task = int(new_task)
             if new_task not in list(range(-1, env.n_subgoals)):
                 print("Wrong option '%s'!" % new_task)
-            new_task = None if new_task == -1 else new_task
-            env.set_subtask(new_task)
+            else:
+                new_task = None if new_task == -1 else new_task
+                env.set_subtask(new_task)
+        elif user_input.lower() == 'h':
+            new_horizon = input("Specify new horizon: ")
+            new_horizon = int(new_horizon)
+            if not new_horizon > 1:
+                print("Wrong horizon '%d'!" % new_horizon)
+            else:
+                args.horizon = new_horizon
+                print("New horizon is %d" % new_horizon)
         elif user_input.lower() == 'e':
             if args.horizon is not None:
                 horizon = args.horizon
