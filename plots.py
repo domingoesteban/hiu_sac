@@ -12,10 +12,10 @@ import traceback
 def get_csv_data(csv_file, labels, space_separated=False):
     data, all_labels = get_csv_data_and_labels(csv_file,
                                                space_separated=space_separated)
-    # # Uncommont to print the labels
-    # for label in all_labels:
-    #     print(label)
-    # print('***\n'*3)
+    # Uncommont to print the labels
+    for label in all_labels:
+        print(label)
+    print('***\n'*3)
     n_data = data.shape[0]
 
     new_data = np.zeros((len(labels), n_data))

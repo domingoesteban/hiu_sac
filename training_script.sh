@@ -4,12 +4,13 @@
 # VARS #
 # #### #
 gpu_id=${1-cpu}
-#env_name='navigation2d'
+env_name='navigation2d'
 #env_name='reacher'
 #env_name='pusher'
-env_name='centauro'
+#env_name='centauro'
+algo_name='hiusac-p'
 #algo_name='hiusac'
-algo_name='sac'
+#algo_name='sac'
 dir_prefix=${algo_name}
 #dir_prefix=${algo_name}
 

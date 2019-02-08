@@ -40,7 +40,7 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=64,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=200,
+            total_iterations=100,
             train_rollouts=5,
             eval_rollouts=3,
             max_horizon=30,
@@ -95,9 +95,9 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=300,
-            train_rollouts=3,
-            eval_rollouts=2,
+            total_iterations=500,
+            train_rollouts=5,
+            eval_rollouts=3,
             max_horizon=1000,
             fixed_horizon=True,
             render=False,
@@ -164,6 +164,10 @@ if __name__ == '__main__':
     default_hyperparams = get_default_hiusac_hyperparams(args.env)
     if args.algo.lower() == 'hiusac':
         default_hyperparams['multitask'] = True
+        default_hyperparams['combination_method'] = 'convex'
+    elif args.algo.lower() == 'hiusac-p':
+        default_hyperparams['multitask'] = True
+        default_hyperparams['combination_method'] = 'product'
     elif args.algo.lower() == 'sac':
         default_hyperparams['multitask'] = False
     else:

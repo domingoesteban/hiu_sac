@@ -7,10 +7,7 @@ import torch
 import json
 
 
-import envs
 from envs import get_normalized_env
-from hiu_sac import HIUSAC
-from utils import interaction
 from utils import rollout
 import plots
 
@@ -137,7 +134,10 @@ if __name__ == '__main__':
             print("New task is %d" % new_task)
         elif user_input.lower() == 'et':
             new_task = input("Specify env_task id (-1 for None). Task id: ")
-            new_task = int(new_task)
+            if not isinstance(new_task, int):
+                print("Wrong option '%s'!" % new_task)
+            else:
+                new_task = int(new_task)
             if new_task not in list(range(-1, env.n_subgoals)):
                 print("Wrong option '%s'!" % new_task)
             else:

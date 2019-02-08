@@ -332,7 +332,7 @@ class MultiPolicyNet(torch.nn.Module):
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
                  combination_method='convex',
-                 normalize_inputs=False
+                 normalize_inputs=False,
                  ):
         super(MultiPolicyNet, self).__init__()
 
@@ -394,6 +394,8 @@ class MultiPolicyNet(torch.nn.Module):
 
         if self.combination_method == 'convex':
             self.combination_non_linear = torch.nn.Softmax(dim=-2)
+        elif self.combination_method == 'product':
+            self.combination_non_linear = torch.nn.Sigmoid()
         else:
             self.combination_non_linear = get_non_linear_op('linear')
 
@@ -477,12 +479,19 @@ class MultiPolicyNet(torch.nn.Module):
             intention = 0
 
         if intention is None:
-            # New Variance
-            variance = torch.sum(
-                variances.detach()*(activation_weights**2),
-                dim=-2,
-                keepdim=False,
-                )
+            if self.combination_method == 'convex':
+                # Option 1: New Variance
+                variance = torch.sum(
+                    variances.detach()*(activation_weights**2),
+                    dim=-2,
+                    keepdim=False,
+                    )
+            elif self.combination_method == 'product':
+                # Option 2: New Variance
+                sig_invs = activation_weights/variances.detach()
+                variance = 1./torch.sum(sig_invs, dim=-2, keepdim=False)
+            else:
+                raise ValueError("Wrong option")
 
             std = torch.sqrt(variance)
             std = torch.clamp(std,
@@ -490,12 +499,23 @@ class MultiPolicyNet(torch.nn.Module):
                               max=math.exp(LOG_SIG_MAX))
             log_std = torch.log(std)
 
-            # New Mean
-            mean = torch.sum(
-                means.detach()*activation_weights,
-                dim=-2,
-                keepdim=False,
+            if self.combination_method == 'convex':
+                # Option 1: New Mean
+                mean = torch.sum(
+                    means.detach()*activation_weights,
+                    dim=-2,
+                    keepdim=False,
+                    )
+            elif self.combination_method == 'product':
+                # Option 2: New Mean
+                mean = variance*torch.sum(
+                    means.detach()*sig_invs,
+                    dim=-2,
+                    keepdim=False
                 )
+            else:
+                raise ValueError("Wrong option")
+
         else:
             intention = self._pols_idxs[intention]
             mean = torch.index_select(means, dim=-2, index=intention).squeeze(-2)
@@ -541,8 +561,8 @@ class MultiPolicyNet(torch.nn.Module):
             ).sum(dim=-1, keepdim=True)
 
         pol_info = dict()
-        pol_info['action_vect'] = actions_vect
-        pol_info['log_probs'] = log_probs
+        pol_info['action_vect'] = actions_vect  # Batch x nIntent x dA
+        pol_info['log_probs'] = log_probs  # Batch x nIntent x 1
         pol_info['log_prob'] = real_log_prob
         pol_info['activation_weights'] = activation_weights
         pol_info['means'] = means

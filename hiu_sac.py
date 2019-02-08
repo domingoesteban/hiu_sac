@@ -93,6 +93,7 @@ class HIUSAC:
             u_tgt_entros=None,
 
             multitask=True,
+            combination_method='convex',
             norm_input_pol=False,
             norm_input_vfs=False,
 
@@ -146,6 +147,7 @@ class HIUSAC:
             intention_final_non_linear='linear',
             intention_batch_norm=False,
             normalize_inputs=norm_input_pol,
+            combination_method=combination_method,
         )
 
         # Value Function Networks

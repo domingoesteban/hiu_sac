@@ -73,7 +73,7 @@ def get_env_and_params(env_name):
             rdn_tgt_object_pose=True,
             robot_config=None,
             rdn_robot_config=True,
-            tgt_cost_weight=3.0,
+            tgt_cost_weight=5.0,
             goal_cost_weight=3.0,
             ctrl_cost_weight=1.0e-3,
             no_task_weight=1.0,
