@@ -469,11 +469,12 @@ class HIUSAC:
                                        intention=None if ii == -1 else ii)
 
                 for step in range(len(rollout_info['reward'])):
-                    self.log_eval_rewards[rr, ii, step] = \
-                        rollout_info['reward'][step]
-                    if self.num_intentions > 0:
-                        self.log_eval_rewards[rr, :self.num_intentions, step] = \
-                            rollout_info['reward_vector'][step].squeeze()
+                    if ii == -1:
+                        self.log_eval_rewards[rr, ii, step] = \
+                            rollout_info['reward'][step]
+                    else:
+                        self.log_eval_rewards[rr, ii, step] = \
+                            rollout_info['reward_vector'][step][ii].squeeze()
         gt.stamp('eval')
 
     def learn(self):
