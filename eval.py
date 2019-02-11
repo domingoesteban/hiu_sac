@@ -46,14 +46,20 @@ def plot_progress(progress_file):
 
 
 def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False):
-    rollout(
+    rollout_info = rollout(
         env, policy,
         max_horizon=max_horizon,
-        fixed_horizon=False,
+        fixed_horizon=True,
         device='cpu',
         render=True,
         intention=task, deterministic=not stochastic,
+        return_info=True
     )
+    if task is None:
+        rollout_return = sum(rollout_info['reward'])
+    else:
+        rollout_return = sum([info[task] for info in rollout_info['reward_vector']])
+    print("The rollout return is: %f" % rollout_return)
 
 
 def plot_value_fcn(qf, policy, env):
