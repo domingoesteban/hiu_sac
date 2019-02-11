@@ -41,6 +41,8 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
     rollout_reward_vector = list()
     rollout_done_vector = list()
 
+    intention = pol_kwargs.get('intention', None)
+
     obs = env.reset()
     if render:
         env.render()
@@ -66,8 +68,10 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             rollout_done_vector.append(interaction_info['done_vector'])
 
         obs = interaction_info['next_obs']
-
-        if not fixed_horizon and interaction_info['done']:
+        is_done = interaction_info['done'] if intention is None \
+            else interaction_info['done_vector'][intention]
+        # print(intention, interaction_info['done'], interaction_info['done_vector'])
+        if not fixed_horizon and is_done:
             print("The rollout has finished because the environment is done!")
             break
     # print("The rollout has finished because the maximum horizon is reached!")
