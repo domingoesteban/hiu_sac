@@ -35,39 +35,52 @@ parser.add_argument('--option', '-o', type=str, default=None,
                     help='Script option [default: None]')
 
 
-def plot_progress(progress_file):
+def plot_progress(progress_file, algo_name='hiusac'):
     """
     Function for plotting useful data from a learning process.
     :param progress_file:
     :return:
     """
-    plots.plot_intentions_eval_returns(progress_file)
-    plots.plot_intentions_info(progress_file)
+    if algo_name in ['hiusac', 'hiusac-p']:
+        num_intentions = 2
+    else:
+        num_intentions = None
+    plots.plot_intentions_eval_returns(
+        progress_file,
+        num_intentions=num_intentions,
+    )
+    plots.plot_intentions_info(
+        progress_file,
+        num_intentions=num_intentions,
+    )
 
 
-def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False):
+def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False,
+                q_fcn=None):
     rollout_info = rollout(
         env, policy,
         max_horizon=max_horizon,
-        fixed_horizon=True,
+        fixed_horizon=False,
         device='cpu',
         render=True,
         intention=task, deterministic=not stochastic,
-        return_info=True
+        return_info=True,
+        q_fcn=q_fcn,
     )
     if task is None:
         rollout_return = sum(rollout_info['reward'])
     else:
-        rollout_return = sum([info[task] for info in rollout_info['reward_vector']])
+        rollout_return = sum([info[task]
+                              for info in rollout_info['reward_vector']])
     print("The rollout return is: %f" % rollout_return)
 
 
 def plot_value_fcn(qf, policy, env):
-    import numpy as np
     obs = np.zeros(env.obs_dim)
     actions_dims = (0, 1)
-    obs[actions_dims[0]] = -2
-    obs[actions_dims[1]] = -2
+
+    obs[actions_dims[0]] = -6
+    obs[actions_dims[1]] = -6
 
     plots.plot_q_values(
         qf,
@@ -79,6 +92,44 @@ def plot_value_fcn(qf, policy, env):
         delta=0.05,
         device='cpu'
     )
+
+
+def plot_navitation2d():
+    from envs import get_normalized_env
+    env, env_params = get_normalized_env(
+        'navigation2d',
+        None,
+        610,
+        False
+    )
+    env.render()
+
+    colors = np.array([
+        'red',
+        'green',
+        'blue',
+        'black',
+        'purple',
+    ])
+
+    obs = [
+        (-2., -2.),
+        (-2., 4.),
+        (4., -2.),
+        (4., 4.),
+        (-6., -6.),
+    ]
+
+    for ob, color in zip(obs, colors):
+        env._wrapped_env._robot_marker(
+            env._wrapped_env._main_ax,
+            ob[0],
+            ob[1],
+            color=color,
+            zoom=0.03
+        )
+
+    input('cucucu')
 
 
 if __name__ == '__main__':
@@ -105,8 +156,8 @@ if __name__ == '__main__':
     models_dir = osp.join(log_dir, 'models', 'last_itr')
     policy_file = osp.join(models_dir, 'policy.pt')
     qf_file = osp.join(models_dir, 'qf1.pt')
-    policy = torch.load(policy_file).cpu()
-    qf = torch.load(qf_file).cpu()
+    policy = torch.load(policy_file, map_location=lambda storage, loc: storage)
+    qf = torch.load(qf_file, map_location=lambda storage, loc: storage)
 
     first_time = True
     while True:
@@ -118,6 +169,7 @@ if __name__ == '__main__':
                                "\t'et':change env task\n"
                                "\t'h':change evaluation horizon\n"
                                "\t'e':evaluate\n"
+                               "\t'n':navigation2d\n"
                                "\t'q' to exit\n"
                                "Option: ")
         else:
@@ -128,7 +180,7 @@ if __name__ == '__main__':
             print("Closing the script. Bye!")
             break
         elif user_input.lower() == 'p':
-            plot_progress(progress_file)
+            plot_progress(progress_file, log_data['algo_name'])
         elif user_input.lower() == 'v':
             plot_value_fcn(qf, policy, env)
         elif user_input.lower() == 't':
@@ -140,10 +192,11 @@ if __name__ == '__main__':
             print("New task is %d" % new_task)
         elif user_input.lower() == 'et':
             new_task = input("Specify env_task id (-1 for None). Task id: ")
-            if not isinstance(new_task, int):
-                print("Wrong option '%s'!" % new_task)
-            else:
+            try:
                 new_task = int(new_task)
+            except ValueError:
+                print("Wrong option '%s'!. "
+                      "It is not possible to convert it to int" % new_task)
             if new_task not in list(range(-1, env.n_subgoals)):
                 print("Wrong option '%s'!" % new_task)
             else:
@@ -164,7 +217,10 @@ if __name__ == '__main__':
                         max_horizon=horizon,
                         task=args.task,
                         stochastic=args.stochastic,
+                        q_fcn=qf,
                         )
+        elif user_input.lower() == 'n':
+            plot_navitation2d()
         else:
             print("Wrong option!")
 

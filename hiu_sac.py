@@ -56,6 +56,7 @@ class HIUSAC:
             # RL algorithm behavior
             total_iterations=10,
             train_rollouts=10,
+            train_steps=100,
             eval_rollouts=10,
             max_horizon=50,
             fixed_horizon=True,
@@ -100,7 +101,7 @@ class HIUSAC:
     ):
         self.use_gpu = gpu_id >= 0
         torch_device = torch.device("cuda:" + str(gpu_id) if self.use_gpu
-                                     else "cpu")
+                                    else "cpu")
         sdevice(torch_device)
         self.seed = seed
         np.random.seed(seed)
@@ -119,6 +120,7 @@ class HIUSAC:
         self.action_dim = env.action_dim
         self.total_iterations = total_iterations
         self.train_rollouts = train_rollouts
+        self.train_steps = train_steps
         self.eval_rollouts = eval_rollouts
         self.max_horizon = max_horizon
         self.fixed_horizon = fixed_horizon
@@ -138,7 +140,7 @@ class HIUSAC:
             obs_dim=self.obs_dim,
             action_dim=self.action_dim,
             shared_sizes=(net_size,),
-            intention_sizes=(net_size, net_size),
+            unintention_sizes=(net_size, net_size),
             shared_non_linear='relu',
             # shared_non_linear='elu',
             shared_batch_norm=False,
@@ -271,8 +273,8 @@ class HIUSAC:
             self.target_vf.to(device=_torch_device)
         self.replay_buffer.to(device=_torch_device)
 
-        self.num_train_steps = 0
         self.num_train_interactions = 0
+        self.num_train_steps = 0
         self.num_eval_interactions = 0
         self.num_iters = 0
 
@@ -350,11 +352,23 @@ class HIUSAC:
         self.first_log = True
         self.log_values_error = 0
         self.log_policies_error = 0
-        self.log_means = np.zeros((self.num_intentions + 1, self.action_dim))
-        self.log_stds = np.zeros((self.num_intentions + 1, self.action_dim))
-        self.log_weights = np.zeros((self.num_intentions, self.action_dim))
+        self.log_entros = torch.zeros((
+            self.batch_size, self.num_intentions + 1
+        ))
+        self.log_means = torch.zeros((
+            self.batch_size, self.num_intentions + 1, self.action_dim
+        ))
+        self.log_stds = torch.zeros((
+            self.batch_size, self.num_intentions + 1, self.action_dim
+        ))
+        self.log_weights = torch.zeros((
+            self.batch_size, self.num_intentions, self.action_dim
+        ))
         self.log_eval_rewards = np.zeros((
-            self.eval_rollouts, self.num_intentions + 1, self.max_horizon
+            self.eval_rollouts, self.num_intentions + 1
+        ))
+        self.log_eval_returns = np.zeros((
+            self.eval_rollouts, self.num_intentions + 1
         ))
 
     @property
@@ -384,68 +398,75 @@ class HIUSAC:
             for model in self.learning_models:
                 model.train()
 
-            for rollout in range(self.train_rollouts):
-                obs = self.env.reset()
-                obs = torch_ify(obs, device=_torch_device, dtype=_torch_dtype)
-                for step in range(self.max_horizon):
-                    if self.render:
-                        self.env.render()
-                    interaction_info = interaction(
-                        self.env, self.policy, obs,
-                        device=_torch_device,
-                        dtype=_torch_dtype,
-                        intention=None, deterministic=False,
-                    )
-                    self.num_train_interactions += 1
-                    gt.stamp('sample')
+            obs = self.env.reset()
+            obs = torch_ify(obs, device=_torch_device, dtype=_torch_dtype)
+            rollout_steps = 0
+            for step in range(self.train_steps):
+            # for rollout in range(self.train_rollouts):
+            #     obs = self.env.reset()
+            #     obs = torch_ify(obs, device=_torch_device, dtype=_torch_dtype)
+            #     for step in range(self.max_horizon):
+                if self.render:
+                    self.env.render()
+                interaction_info = interaction(
+                    self.env, self.policy, obs,
+                    device=_torch_device,
+                    dtype=_torch_dtype,
+                    intention=None, deterministic=False,
+                )
+                self.num_train_interactions += 1
+                rollout_steps += 1
+                gt.stamp('sample')
 
-                    # Get useful info from interaction
-                    next_obs = torch_ify(
-                        interaction_info['next_obs'],
-                        device=_torch_device, dtype=_torch_dtype
-                    )
-                    action = interaction_info['action']
-                    reward = torch_ify(
-                        interaction_info['reward'],
-                        device=_torch_device, dtype=_torch_dtype
-                    )
-                    done = torch_ify(
-                        interaction_info['done'],
-                        device=_torch_device, dtype=_torch_dtype
-                    )
-                    reward_vector = torch_ify(
-                        interaction_info['reward_vector'],
-                        device=_torch_device, dtype=_torch_dtype
-                    ).squeeze()
-                    done_vector = torch_ify(
-                        interaction_info['done_vector'],
-                        device=_torch_device, dtype=_torch_dtype
-                    ).squeeze()
+                # Get useful info from interaction
+                next_obs = torch_ify(
+                    interaction_info['next_obs'],
+                    device=_torch_device, dtype=_torch_dtype
+                )
+                action = interaction_info['action']
+                reward = torch_ify(
+                    interaction_info['reward'],
+                    device=_torch_device, dtype=_torch_dtype
+                )
+                done = torch_ify(
+                    interaction_info['done'],
+                    device=_torch_device, dtype=_torch_dtype
+                )
+                reward_vector = torch_ify(
+                    interaction_info['reward_vector'],
+                    device=_torch_device, dtype=_torch_dtype
+                ).squeeze()
+                done_vector = torch_ify(
+                    interaction_info['done_vector'],
+                    device=_torch_device, dtype=_torch_dtype
+                ).squeeze()
 
-                    # Add data to replay_buffer
-                    self.replay_buffer.add_sample(obs,
-                                                  action.detach(),
-                                                  reward,
-                                                  done,
-                                                  next_obs,
-                                                  reward_vector,
-                                                  done_vector
-                                                  )
+                # Add data to replay_buffer
+                self.replay_buffer.add_sample(obs,
+                                              action.detach(),
+                                              reward,
+                                              done,
+                                              next_obs,
+                                              reward_vector,
+                                              done_vector
+                                              )
 
-                    # Only train when there are enough samples from buffer
-                    if self.replay_buffer.available_samples() > self.batch_size:
-                        for ii in range(self.optimization_steps):
-                            self.learn()
-                    gt.stamp('train')
+                # Only train when there are enough samples from buffer
+                if self.replay_buffer.available_samples() > self.batch_size:
+                    for ii in range(self.optimization_steps):
+                        self.learn()
+                gt.stamp('train')
 
-                    # Reset environment if it is done
-                    if done:
-                        obs = self.env.reset()
-                        obs = torch_ify(obs, device=_torch_device,
-                                        dtype=_torch_dtype)
-                    else:
-                        obs = next_obs
+                # Reset environment if it is done
+                if done or rollout_steps > self.max_horizon:
+                    obs = self.env.reset()
+                    obs = torch_ify(obs, device=_torch_device,
+                                    dtype=_torch_dtype)
+                    rollout_steps = 0
+                else:
+                    obs = next_obs
 
+            # Evaluate current policy to check performance
             self.eval()
 
             self.log()
@@ -457,8 +478,12 @@ class HIUSAC:
         for model in self.learning_models:
             model.eval()
 
+        env_subtask = self.env.get_subtask()
         for ii in range(-1, self.num_intentions):
             for rr in range(self.eval_rollouts):
+                if self.num_intentions > 0:
+                    self.env.set_subtask(None if ii == -1 else ii)
+
                 rollout_info = rollout(self.env, self.policy,
                                        max_horizon=self.max_horizon,
                                        fixed_horizon=self.fixed_horizon,
@@ -468,13 +493,18 @@ class HIUSAC:
                                        deterministic=True,
                                        intention=None if ii == -1 else ii)
 
-                for step in range(len(rollout_info['reward'])):
-                    if ii == -1:
-                        self.log_eval_rewards[rr, ii, step] = \
-                            rollout_info['reward'][step]
-                    else:
-                        self.log_eval_rewards[rr, ii, step] = \
-                            rollout_info['reward_vector'][step][ii].squeeze()
+                if ii == -1:
+                    rewards = np.array(rollout_info['reward'])
+                else:
+                    rewards = np.array(rollout_info['reward_vector'])[:, ii]
+
+                self.log_eval_rewards[rr, ii] = rewards.mean()
+                self.log_eval_returns[rr, ii] = rewards.sum()
+
+                self.num_eval_interactions += rewards.size
+
+        self.env.set_subtask(env_subtask)
+
         gt.stamp('eval')
 
     def learn(self):
@@ -514,15 +544,15 @@ class HIUSAC:
         # Intentional policy info
         i_new_actions = i_all_actions[:self.batch_size]
         i_next_actions = i_all_actions[self.batch_size:].detach()
-        i_new_log_pi = policy_info['log_prob'][:self.batch_size]
-        i_next_log_pi = policy_info['log_prob'][self.batch_size:].detach()
+        i_new_log_pi = policy_info['i_log_prob'][:self.batch_size]
+        i_next_log_pi = policy_info['i_log_prob'][self.batch_size:].detach()
 
         # Unintentional policy info
         if self.num_intentions > 0:
-            u_new_actions = policy_info['action_vect'][:self.batch_size]
-            u_next_actions = policy_info['action_vect'][self.batch_size:].detach()
-            u_new_log_pi = policy_info['log_probs'][:self.batch_size]
-            u_next_log_pi = policy_info['log_probs'][self.batch_size:].detach()
+            u_new_actions = policy_info['u_actions'][:self.batch_size]
+            u_next_actions = policy_info['u_actions'][self.batch_size:].detach()
+            u_new_log_pi = policy_info['u_log_probs'][:self.batch_size]
+            u_next_log_pi = policy_info['u_log_probs'][self.batch_size:].detach()
         else:
             u_new_actions = None
             u_next_actions = None
@@ -530,11 +560,11 @@ class HIUSAC:
             u_next_log_pi = None
 
         # Additional info
-        i_new_mean = policy_info['mean'][:self.batch_size]
-        i_new_log_std = policy_info['log_std'][:self.batch_size]
-        u_new_means = policy_info['means'][:self.batch_size]
+        i_new_mean = policy_info['i_mean'][:self.batch_size]
+        i_new_log_std = policy_info['i_log_std'][:self.batch_size]
+        u_new_means = policy_info['u_means'][:self.batch_size]
         if self.num_intentions > 0:
-            u_new_log_stds = policy_info['log_stds'][:self.batch_size]
+            u_new_log_stds = policy_info['u_log_stds'][:self.batch_size]
             activation_weights = policy_info['activation_weights'][:self.batch_size]
         else:
             u_new_log_stds = None
@@ -700,10 +730,11 @@ class HIUSAC:
             # log_alphas = self.log_alphas.clamp(max=MAX_LOG_ALPHA)
             alphas_loss = - (self.log_alphas *
                              (hiu_new_log_pi.squeeze(-1) + self.tgt_entros
-                              ).detach()
-                             ).mean()
+                              ).mean(dim=0).detach()
+                             )
+            hiu_alphas_loss = alphas_loss.sum()
             self._alphas_optimizer.zero_grad()
-            alphas_loss.backward()
+            hiu_alphas_loss.backward()
             self._alphas_optimizer.step()
             self.log_alphas.data.clamp_(min=math.log(self.min_alpha),
                                         max=math.log(self.max_alpha))
@@ -730,7 +761,7 @@ class HIUSAC:
                     target=self.target_vf,
                     tau=self.soft_target_tau
                 )
-        # Always update buffers
+        # Always hard_update of input normalizer (if active)
         if self.norm_input_vfs:
             if self.target_vf is None:
                 hard_buffer_update_from_to(
@@ -756,12 +787,13 @@ class HIUSAC:
         # ######## #
         self.log_policies_error = policy_loss.item()
         self.log_values_error = values_loss.item()
-        self.log_means[-1] = np_ify(i_new_mean.mean(dim=0))
-        self.log_stds[-1] = np_ify(i_new_log_std.exp().mean(dim=0))
+        self.log_entros.data.copy_(-hiu_new_log_pi.squeeze(dim=-1).data)
+        self.log_means.data[:, -1].copy_(i_new_mean.data)
+        self.log_stds.data[:, -1].copy_(i_new_log_std.exp().data)
         if self.num_intentions > 0:
-            self.log_means[:self.num_intentions] = np_ify(u_new_means.mean(dim=0))
-            self.log_stds[:self.num_intentions] = np_ify(u_new_log_stds.exp().mean(dim=0))
-            self.log_weights = np_ify(activation_weights.mean(dim=0))
+            self.log_means.data[:, :self.num_intentions].copy_(u_new_means.data)
+            self.log_stds.data[:, :self.num_intentions].copy_(u_new_log_stds.exp().data)
+            self.log_weights.data.copy_(activation_weights.data)
 
     def save(self):
         snapshot_gap = logger.get_snapshot_gap()
@@ -844,27 +876,36 @@ class HIUSAC:
         # Training Stats to plot
         statistics["Total Policy Error"] = self.log_policies_error
         statistics["Total Value Error"] = self.log_values_error
+
         for intention in range(self.num_intentions):
             statistics["Alpha [U-%02d]" % intention] = \
                 self.log_alphas[intention].exp().detach().cpu().numpy()
         statistics["Alpha"] = \
             self.log_alphas[-1].exp().detach().cpu().numpy()
 
+        for intention in range(self.num_intentions):
+            statistics["Entropy [U-%02d]" % intention] = \
+                np_ify(self.log_entros[intention].mean(dim=0))
+        statistics["Entropy"] = \
+            np_ify(self.log_entros[-1].mean(dim=0))
+
+        act_means = np_ify(self.log_means.mean(dim=0))
+        act_stds = np_ify(self.log_stds.mean(dim=0))
         for aa in range(self.action_dim):
             for intention in range(self.num_intentions):
                 statistics["Mean Action %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_means[intention, aa]
+                    act_means[intention, aa]
                 statistics["Std Action %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_stds[intention, aa]
+                    act_stds[intention, aa]
             statistics["Mean Action %02d" % aa] = \
-                self.log_means[-1, aa]
+                act_means[-1, aa]
             statistics["Std Action %02d" % aa] = \
-                self.log_stds[-1, aa]
+                act_stds[-1, aa]
 
         for aa in range(self.action_dim):
             for intention in range(self.num_intentions):
                 statistics["Activation Weight %02d [U-%02d]" % (aa, intention)] = \
-                    self.log_weights[intention, aa]
+                    np_ify(self.log_weights.mean(dim=0)[intention, aa])
 
         # Evaluation Stats to plot
         for ii in range(-1, self.num_intentions):
@@ -873,13 +914,13 @@ class HIUSAC:
             else:
                 uu_str = ''
             statistics["Test Rewards Mean"+uu_str] = \
-                self.log_eval_rewards[:, ii, :].mean()
+                self.log_eval_rewards[:, ii].mean()
             statistics["Test Rewards Std"+uu_str] = \
-                self.log_eval_rewards[:, ii, :].std()
+                self.log_eval_rewards[:, ii].std()
             statistics["Test Returns Mean"+uu_str] = \
-                np.sum(self.log_eval_rewards[:, ii, :], axis=-1).mean(axis=0)
+                self.log_eval_returns[:, ii].mean()
             statistics["Test Returns Std"+uu_str] = \
-                np.sum(self.log_eval_rewards[:, ii, :], axis=-1).std(axis=0)
+                self.log_eval_returns[:, ii].std()
 
         # Add Tabular data to logger
         for key, value in statistics.items():

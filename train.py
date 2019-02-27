@@ -67,23 +67,28 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=100,
-            train_rollouts=3,
-            eval_rollouts=3,
-            max_horizon=1000,
-            fixed_horizon=True,
+            total_iterations=200,
+            # train_rollouts=3,
+            train_steps=750,
+            eval_rollouts=5,
+            # max_horizon=1000,
+            max_horizon=150,  # Con skip 50, desde 27-02 a las 18.21
+            fixed_horizon=False,
             render=False,
             gpu_id=-1,
             seed=610,
 
             batch_size=256,
-            replay_buffer_size=1e6,
+            replay_buffer_size=5e6,
 
             i_entropy_scale=1.,
 
             auto_alpha=True,
             # auto_alpha=False,
             # i_tgt_entro=None,
+            # i_tgt_entro=1.e-0,  # Hasta 23-02
+            # i_tgt_entro=1.e-0,
+            # u_tgt_entros=[0.e-0, 0.e-0],
             i_tgt_entro=1.e-0,
             u_tgt_entros=None,
 
@@ -96,22 +101,25 @@ def get_default_hiusac_hyperparams(env_name):
             use_q2=True,
             explicit_vf=False,
             total_iterations=500,
-            train_rollouts=5,
-            eval_rollouts=3,
-            max_horizon=1000,
-            fixed_horizon=True,
+            # train_rollouts=2,
+            train_steps=750,
+            eval_rollouts=5,
+            # max_horizon=5000,  # Con skip 10
+            # max_horizon=1500,  # Con skip 50
+            max_horizon=300,  # Con skip 50, desde 27-02 a las 17.50
+            fixed_horizon=False,
             render=False,
             gpu_id=-1,
             seed=610,
 
             batch_size=256,
-            replay_buffer_size=1e6,
+            replay_buffer_size=5e6,
 
             i_entropy_scale=1.,
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=1.e-0,
+            i_tgt_entro=2.e-0,
             u_tgt_entros=None,
 
             norm_input_pol=False,
@@ -122,24 +130,29 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=256,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=1000,
+            total_iterations=300,
             train_rollouts=5,
-            eval_rollouts=3,
+            eval_rollouts=5,
             max_horizon=1000,
-            fixed_horizon=True,
+            # max_horizon=10,
+            fixed_horizon=False,
             render=False,
             gpu_id=-1,
             seed=610,
 
             batch_size=256,
-            replay_buffer_size=1e6,
+            # replay_buffer_size=5e6,
+            replay_buffer_size=10e6,
 
             i_entropy_scale=1.,
 
             auto_alpha=True,
             # auto_alpha=False,
-            i_tgt_entro=0.e+0,
-            u_tgt_entros=[0.e+0, 0e+0],
+            # i_tgt_entro=0.e+0,  # Exp 24/02
+            # u_tgt_entros=[0.e+0, 0e+0],
+            i_tgt_entro=1.e+0,
+            # u_tgt_entros=[1.e+0, -2e0],
+            u_tgt_entros=[1.e+0, 1e+0],  # Desde 27-02 a las 13:00
 
             norm_input_pol=False,
             norm_input_vfs=False,
@@ -168,6 +181,9 @@ if __name__ == '__main__':
     elif args.algo.lower() == 'hiusac-p':
         default_hyperparams['multitask'] = True
         default_hyperparams['combination_method'] = 'product'
+    elif args.algo.lower() == 'hiusac-m':
+        default_hyperparams['multitask'] = True
+        default_hyperparams['combination_method'] = 'gmm'
     elif args.algo.lower() == 'sac':
         default_hyperparams['multitask'] = False
     else:
@@ -182,6 +198,7 @@ if __name__ == '__main__':
         default_hyperparams['total_iterations'] = args.iterations
 
     expt_variant = dict(
+        algo_name=args.algo.lower(),
         algo_params=default_hyperparams,
         env_name=args.env,
         env_params=env_params,

@@ -8,9 +8,9 @@ LOG_SIG_MIN = -6.907755  # SIGMA 0.001
 EPS = 1e-8
 
 
-class Intention(torch.nn.Module):
+class NNModule(torch.nn.Module):
     """
-    Base NN class of an Intention head.
+    NN Module for modeling Q-values and activation weights
     """
     def __init__(self,
                  input_size,
@@ -18,9 +18,9 @@ class Intention(torch.nn.Module):
                  output_size,
                  non_linear,
                  final_non_linear,
-                 batch_norm=False
+                 batch_norm=False,
                  ):
-        super(Intention, self).__init__()
+        super(NNModule, self).__init__()
         self.batch_norm = batch_norm
         self.non_linear_name = non_linear
         self.output_non_linear_name = final_non_linear
@@ -79,9 +79,9 @@ class Intention(torch.nn.Module):
         return x
 
 
-class IntentionPolicy(torch.nn.Module):
+class ComposablePolicy(torch.nn.Module):
     """
-    Base NN class of an Intention head.
+    Composable Gaussian Policy Module
     """
     def __init__(self,
                  input_size,
@@ -89,9 +89,9 @@ class IntentionPolicy(torch.nn.Module):
                  output_size,
                  non_linear,
                  final_non_linear,
-                 batch_norm=False
+                 batch_norm=False,
                  ):
-        super(IntentionPolicy, self).__init__()
+        super(ComposablePolicy, self).__init__()
         self.batch_norm = batch_norm
         self.non_linear_name = non_linear
         self.output_non_linear_name = final_non_linear
@@ -113,6 +113,7 @@ class IntentionPolicy(torch.nn.Module):
                 self.__setattr__("layer{}_norm".format(ll), bn)
             i_size = o_size
 
+        # Mean and log_std outputs
         self.mean_layer = torch.nn.Linear(i_size, output_size)
         self.log_std_layer = torch.nn.Linear(i_size, output_size)
 
@@ -156,7 +157,7 @@ class IntentionPolicy(torch.nn.Module):
 
 class MultiValueNet(torch.nn.Module):
     """
-    Multi-head Value network
+    Base NN for both Q-values and V-values
     """
     def __init__(self,
                  num_intentions,
@@ -178,7 +179,7 @@ class MultiValueNet(torch.nn.Module):
 
         self.shared_non_linear = get_non_linear_op(self.shared_non_linear_name)
 
-        # Shared Layers
+        # Shared layers
         self.shared_layers = list()
         self.shared_layer_norms = list()
         i_size = input_dim
@@ -192,9 +193,10 @@ class MultiValueNet(torch.nn.Module):
                 self.__setattr__("slayer{}_norm".format(ll), bn)
             i_size = o_size
 
-        self.critic_nets = list()
+        # Value NN modules
+        self.value_nets = list()
         for ii in range(num_intentions):
-            critic_net = Intention(
+            critic_net = NNModule(
                 input_size=i_size,
                 hidden_sizes=intention_sizes,
                 output_size=1,
@@ -202,9 +204,10 @@ class MultiValueNet(torch.nn.Module):
                 final_non_linear=intention_final_non_linear,
                 batch_norm=intention_batch_norm,
             )
-            self.critic_nets.append(critic_net)
+            self.value_nets.append(critic_net)
             self.add_module('intention{}'.format(ii), critic_net)
 
+        # (Optional) input normalization
         if normalize_inputs:
             self.add_module('input_normalization', Normalizer(self.input_dim))
         else:
@@ -227,10 +230,7 @@ class MultiValueNet(torch.nn.Module):
 
     def forward(self, x, intention=None):
         if self.input_normalization is not None:
-            init_shape = x.shape
-            x = x.view(-1, self.input_dim)
             x = self.input_normalization(x)
-            x = x.view(init_shape)
 
         for ll in range(len(self.shared_layers)):
             x = self.shared_non_linear(self.shared_layers[ll](x))
@@ -238,9 +238,9 @@ class MultiValueNet(torch.nn.Module):
                 x = self.shared_layer_norms[ll](x)
 
         if intention is None:
-            critic_nets = self.critic_nets  # All critics
+            critic_nets = self.value_nets  # All critics
         else:
-            critic_nets = [self.critic_nets[intention]]
+            critic_nets = [self.value_nets[intention]]  # Requested critic
 
         values = list()
         for critic in critic_nets:
@@ -253,6 +253,9 @@ class MultiValueNet(torch.nn.Module):
 
 
 class MultiQNet(MultiValueNet):
+    """
+    State-Action Value Function
+    """
     def __init__(self,
                  num_intentions,
                  obs_dim,
@@ -286,6 +289,9 @@ class MultiQNet(MultiValueNet):
 
 
 class MultiVNet(MultiValueNet):
+    """
+    State Value Function
+    """
     def __init__(self,
                  num_intentions,
                  obs_dim,
@@ -318,14 +324,14 @@ class MultiVNet(MultiValueNet):
 
 class MultiPolicyNet(torch.nn.Module):
     """
-    Multi-head network
+    Hierarchical Policy
     """
     def __init__(self,
                  num_intentions,
                  obs_dim,
                  action_dim,
                  shared_sizes,
-                 intention_sizes,
+                 unintention_sizes,
                  shared_non_linear='relu',
                  shared_batch_norm=False,
                  intention_non_linear='relu',
@@ -361,41 +367,44 @@ class MultiPolicyNet(torch.nn.Module):
                 self.__setattr__("slayer{}_norm".format(ll), bn)
             i_size = o_size
 
-        # Intentional Policies
+        # Composable Policies
         self.policy_nets = list()
         for ii in range(num_intentions):
-            # policy_net = Intention(
+            # policy_net = NNModule(
             #     input_size=i_size,
-            #     hidden_sizes=intention_sizes,
+            #     hidden_sizes=unintention_sizes,
             #     output_size=action_dim*2,  # Output means and log_stds
             #     non_linear=intention_non_linear,
             #     final_non_linear=intention_final_non_linear,
             #     batch_norm=intention_batch_norm,
             # )
-            policy_net = IntentionPolicy(
+            policy_net = ComposablePolicy(
                 input_size=i_size,
-                hidden_sizes=intention_sizes,
-                output_size=action_dim,  # Output means and log_stds
+                hidden_sizes=unintention_sizes,
+                output_size=action_dim,
                 non_linear=intention_non_linear,
                 final_non_linear=intention_final_non_linear,
                 batch_norm=intention_batch_norm,
             )
             self.policy_nets.append(policy_net)
-            self.add_module('intention{}'.format(ii), policy_net)
+            self.add_module('unintention{}'.format(ii), policy_net)
 
-        self.combination_net = Intention(
+        # Activation vector module
+        self.weights_net = NNModule(
             input_size=i_size,
-            hidden_sizes=intention_sizes,
-            output_size=num_intentions*self.action_dim,  # Output means and log_stds
+            hidden_sizes=unintention_sizes,
+            output_size=num_intentions*self.action_dim,  # Activation vectors
             non_linear=intention_non_linear,
             final_non_linear=intention_final_non_linear,
             batch_norm=intention_batch_norm,
         )
 
         if self.combination_method == 'convex':
-            self.combination_non_linear = torch.nn.Softmax(dim=-2)
+            # self.combination_non_linear = torch.nn.Softmax(dim=-2)
+            self.combination_non_linear = get_non_linear_op('softmax', dim=-2)
         elif self.combination_method == 'product':
-            self.combination_non_linear = torch.nn.Sigmoid()
+            # self.combination_non_linear = torch.nn.Sigmoid()
+            self.combination_non_linear = get_non_linear_op('sigmoid')
         else:
             self.combination_non_linear = get_non_linear_op('linear')
 
@@ -422,17 +431,69 @@ class MultiPolicyNet(torch.nn.Module):
             init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
+    def gaussian_composition(self, means, variances, activation_weights):
+        """
+        Function 'f' in paper.
+        :param means: Composable policy means
+        :param variances: Composable policy variances
+        :param activation_weights: Activation vectors
+        :return: (compound policy, compound variance vector)
+        """
+        # Compound policy variance
+        if self.combination_method == 'convex':  # Option 1
+            compound_variance = torch.sum(
+                variances.detach()*(activation_weights**2),
+                dim=-2,
+                keepdim=False,
+                )
+        elif self.combination_method == 'product':  # Option 2
+            sig_invs = activation_weights/variances.detach()
+            compound_variance = 1./torch.sum(sig_invs, dim=-2, keepdim=False)
+        elif self.combination_method == 'gmm':  # Option 3
+            # Sample latent variables
+            z = torch.distributions.Multinomial(
+                logits=activation_weights.transpose(-2, -1)
+            ).sample().transpose(-2, -1)  # Batch x nIntent
+            compound_variance = torch.sum(
+                variances.detach()*z,
+                dim=-2,
+                keepdim=False,
+                )
+        else:
+            raise ValueError("Wrong combination method!")
+
+        # Compound policy mean
+        if self.combination_method == 'convex':  # Option 1
+            compound_mean = torch.sum(
+                means.detach()*activation_weights,
+                dim=-2,
+                keepdim=False,
+            )
+        elif self.combination_method == 'product':  # Option 2
+            compound_mean = compound_variance*torch.sum(
+                means.detach()*sig_invs,
+                dim=-2,
+                keepdim=False
+            )
+        elif self.combination_method == 'gmm':  # Option 3
+            compound_mean = torch.sum(
+                means.detach()*z,
+                dim=-2,
+                keepdim=False,
+            )
+        else:
+            raise ValueError("Wrong combination method!")
+
+        return compound_mean, compound_variance
+
     def forward(self, observation, deterministic=False, intention=None,
                 log_prob=False,
                 ):
         if log_prob and deterministic:
-            raise ValueError("It is not possible to calculate log_probs in"
-                             "deterministic policies")
+            raise ValueError("It is not possible to calculate log_probs in "
+                             "deterministic policies.")
         if self.input_normalization is not None:
-            init_shape = observation.shape
-            observation = observation.view(-1, self.obs_dim)
             observation = self.input_normalization(observation)
-            observation = observation.view(init_shape)
 
         x = observation
         for ll in range(len(self.shared_layers)):
@@ -440,161 +501,150 @@ class MultiPolicyNet(torch.nn.Module):
             if self.shared_batch_norm:
                 x = self.shared_layer_norms[ll](x)
 
-        means = list()
-        log_stds = list()
+        # Composable means and std vectors
+        u_means = list()
+        u_log_stds = list()
         for policy in self.policy_nets:
             # pol_params = policy(x).unsqueeze(dim=-2)
             # means.append(pol_params[:, :, :self.action_dim])
             # log_stds.append(pol_params[:, :, self.action_dim:])
             pol_params = policy(x)
-            means.append(pol_params[0].unsqueeze(dim=-2))
-            log_stds.append(pol_params[1].unsqueeze(dim=-2))
+            u_means.append(pol_params[0].unsqueeze(dim=-2))
+            u_log_stds.append(pol_params[1].unsqueeze(dim=-2))
 
-        activation_weights = self.combination_net(x)
+        u_means = torch.cat(u_means, dim=-2)
+
+        # It is not efficient to calculate log_std, stds, and variances with
+        # the deterministic option but it is easier to organize everything.
+        u_log_stds = torch.cat(u_log_stds, dim=-2)
+        # # Method 1:
+        # log_stds = torch.tanh(log_stds)
+        # log_stds = \
+        #     LOG_SIG_MIN + 0.5 * (LOG_SIG_MAX - LOG_SIG_MIN)*(log_stds + 1)
+        # Method 2:
+        u_log_stds = torch.clamp(u_log_stds, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
+
+        u_stds = u_log_stds.exp()
+        u_variances = u_stds**2
+
+        # Composable activation vectors
+        activation_weights = self.weights_net(x)
         activation_weights = activation_weights.reshape(-1,
                                                         self.num_intentions,
                                                         self.action_dim)
         activation_weights = self.combination_non_linear(activation_weights)
 
-        means = torch.cat(means, dim=-2)
-
-        real_log_prob = None
-        log_probs = None
-
-        # It is not efficient to calculate log_std, stds, and variances with
-        # the deterministic option but it is easier to organize everything
-        log_stds = torch.cat(log_stds, dim=-2)
-        # # Method 1:
-        # log_stds = torch.tanh(log_stds)
-        # log_stds = \
-        #     LOG_SIG_MIN + 0.5 * (LOG_SIG_MAX - LOG_SIG_MIN)*(log_stds + 1)
-        # Methods 2:
-        log_stds = torch.clamp(log_stds, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
-
-        stds = log_stds.exp()
-        variances = stds**2
-
-        # If there is only one intention return the only intention
+        # If the policy has only one unintention become as intention
         if not self.num_intentions > 1:
             intention = 0
 
         if intention is None:
-            if self.combination_method == 'convex':
-                # Option 1: New Variance
-                variance = torch.sum(
-                    variances.detach()*(activation_weights**2),
-                    dim=-2,
-                    keepdim=False,
-                    )
-            elif self.combination_method == 'product':
-                # Option 2: New Variance
-                sig_invs = activation_weights/variances.detach()
-                variance = 1./torch.sum(sig_invs, dim=-2, keepdim=False)
-            else:
-                raise ValueError("Wrong option")
+            i_mean, i_variance = self.gaussian_composition(
+                u_means,
+                u_variances,
+                activation_weights
+            )
 
-            std = torch.sqrt(variance)
-            std = torch.clamp(std,
-                              min=math.exp(LOG_SIG_MIN),
-                              max=math.exp(LOG_SIG_MAX))
-            log_std = torch.log(std)
-
-            if self.combination_method == 'convex':
-                # Option 1: New Mean
-                mean = torch.sum(
-                    means.detach()*activation_weights,
-                    dim=-2,
-                    keepdim=False,
-                    )
-            elif self.combination_method == 'product':
-                # Option 2: New Mean
-                mean = variance*torch.sum(
-                    means.detach()*sig_invs,
-                    dim=-2,
-                    keepdim=False
-                )
-            else:
-                raise ValueError("Wrong option")
-
+            i_std = torch.sqrt(i_variance)
+            # # Method 1:
+            # std = torch.tanh(std)
+            # std = math.exp(LOG_SIG_MIN) + \
+            #     0.5 * (math.exp(LOG_SIG_MAX) - math.exp(LOG_SIG_MIN))*(std + 1)
+            # Method 2:
+            i_std = torch.clamp(i_std,
+                                min=math.exp(LOG_SIG_MIN),
+                                max=math.exp(LOG_SIG_MAX))
+            i_log_std = torch.log(i_std)
         else:
             intention = self._pols_idxs[intention]
-            mean = torch.index_select(means, dim=-2, index=intention).squeeze(-2)
+            i_mean = \
+                torch.index_select(u_means, dim=-2, index=intention).squeeze(-2)
 
-            log_std = \
-                torch.index_select(log_stds, dim=1, index=intention).squeeze(-2)
-            std = \
-                torch.index_select(stds, dim=1, index=intention).squeeze(-2)
-            variance = \
-                torch.index_select(variances, dim=1, index=intention).squeeze(-2)
+            i_variance = \
+                torch.index_select(u_variances, dim=1, index=intention).squeeze(-2)
+            i_std = \
+                torch.index_select(u_stds, dim=1, index=intention).squeeze(-2)
+            i_log_std = \
+                torch.index_select(u_log_stds, dim=1, index=intention).squeeze(-2)
 
+        u_log_probs = None
+        i_log_prob = None
         if deterministic:
-            action = mean
-            actions_vect = means
+            u_actions = u_means
+            i_action = i_mean
         else:
             # Sample from Gaussian distribution
-            noise = torch.randn_like(std)
-            actions_vect = stds*noise.unsqueeze(1) + means
-            action = std*noise + mean
+            noise = torch.randn_like(i_std)
+            u_actions = u_stds*noise.unsqueeze(1) + u_means
+            i_action = i_std*noise + i_mean
 
             if log_prob:
-                log_probs = -0.5*(((actions_vect - means) / (stds + EPS))**2
-                                  + 2*log_stds + math.log(2*math.pi))
-                log_probs = log_probs.sum(dim=-1, keepdim=True)
+                u_log_probs = -0.5*(((u_actions - u_means) / (u_stds + EPS))**2
+                                    + 2*u_log_stds + math.log(2*math.pi))
+                u_log_probs = u_log_probs.sum(dim=-1, keepdim=True)
 
-                real_log_prob = -0.5*(((action - mean) / (std + EPS))**2
-                                      + 2*log_std + math.log(2*math.pi))
-                real_log_prob = real_log_prob.sum(dim=-1, keepdim=True)
+                i_log_prob = -0.5*(((i_action - i_mean) / (i_std + EPS))**2
+                                   + 2*i_log_std + math.log(2*math.pi))
+                i_log_prob = i_log_prob.sum(dim=-1, keepdim=True)
 
         # Action between -1 and 1
-        action = torch.tanh(action)
-        actions_vect = torch.tanh(actions_vect)
-        if log_prob:
-            log_probs -= torch.log(
-                # torch.clamp(1. - actions_vect**2, 0, 1)
-                clip_but_pass_gradient(1. - actions_vect**2, 0, 1)
+        i_action = torch.tanh(i_action)
+        u_actions = torch.tanh(u_actions)
+        if not deterministic and log_prob:
+            u_log_probs -= torch.log(
+                # # Method 1
+                # torch.clamp(1. - u_actions**2, 0, 1)
+                # Method 2
+                clip_but_pass_gradient(1. - u_actions**2, 0, 1)
                 + 1.e-6
             ).sum(dim=-1, keepdim=True)
-            real_log_prob -= torch.log(
-                # torch.clamp(1. - action**2, 0, 1)
-                clip_but_pass_gradient(1. - action**2, 0, 1)
+            i_log_prob -= torch.log(
+                # # Method 1
+                # torch.clamp(1. - i_action**2, 0, 1)
+                # Method 2
+                clip_but_pass_gradient(1. - i_action**2, 0, 1)
                 + 1.e-6
             ).sum(dim=-1, keepdim=True)
+
+        # print(activation_weights[0, :, :].mean(dim=1).detach().cpu().numpy())
 
         pol_info = dict()
-        pol_info['action_vect'] = actions_vect  # Batch x nIntent x dA
-        pol_info['log_probs'] = log_probs  # Batch x nIntent x 1
-        pol_info['log_prob'] = real_log_prob
-        pol_info['activation_weights'] = activation_weights
-        pol_info['means'] = means
-        pol_info['mean'] = mean
-        pol_info['log_stds'] = log_stds
-        pol_info['log_std'] = log_std
-        pol_info['stds'] = stds
-        pol_info['std'] = std
-        pol_info['variances'] = variances
-        pol_info['variance'] = variance
+        pol_info['u_actions'] = u_actions  # Batch x nIntent x dA
+        pol_info['u_log_probs'] = u_log_probs  # Batch x nIntent x 1
+        pol_info['i_log_prob'] = i_log_prob  # Batch x 1
+        pol_info['activation_weights'] = activation_weights # Batch x nInt x dA
+        pol_info['u_means'] = u_means  # Batch x nIntent x dA
+        pol_info['i_mean'] = i_mean  # Batch x dA
+        pol_info['u_log_stds'] = u_log_stds  # Batch x nIntent x dA
+        pol_info['i_log_std'] = i_log_std  # Batch x dA
+        pol_info['u_stds'] = u_stds  # Batch x nIntent x dA
+        pol_info['i_std'] = i_std  # Batch x dA
+        pol_info['u_variances'] = u_variances  # Batch x nIntent x dA
+        pol_info['i_variance'] = i_variance  # Batch x dA
 
-        return action, pol_info
+        return i_action, pol_info
 
 
-def get_non_linear_op(name):
-    if name.lower() == 'relu':
-        activation = torch.nn.ReLU()
-    elif name.lower() == 'elu':
-        activation = torch.nn.ELU()
-    elif name.lower() == 'leaky_relu':
-        activation = torch.nn.LeakyReLU()
-    elif name.lower() == 'selu':
-        activation = torch.nn.SELU()
-    elif name.lower() == 'sigmoid':
+def get_non_linear_op(op_name, **kwargs):
+    if op_name.lower() == 'relu':
+        activation = torch.nn.ReLU(**kwargs)
+    elif op_name.lower() == 'elu':
+        activation = torch.nn.ELU(**kwargs)
+    elif op_name.lower() == 'leaky_relu':
+        activation = torch.nn.LeakyReLU(**kwargs)
+    elif op_name.lower() == 'selu':
+        activation = torch.nn.SELU(**kwargs)
+    elif op_name.lower() == 'softmax':
+        activation = torch.nn.Softmax(**kwargs)
+    elif op_name.lower() == 'sigmoid':
         activation = torch.nn.Sigmoid()
-    elif name.lower() == 'tanh':
+    elif op_name.lower() == 'tanh':
         activation = torch.nn.Tanh()
-    elif name.lower() in ['linear', 'identity']:
+    elif op_name.lower() in ['linear', 'identity']:
         activation = torch.nn.Sequential()
     else:
         raise AttributeError("Pytorch does not have activation '%s'",
-                             name)
+                             op_name)
     return activation
 
 
@@ -627,11 +677,14 @@ class Normalizer(torch.nn.Module):
         self.synchronized = True
 
     def forward(self, x):
+        init_shape = x.shape
+        x = x.view(-1, self.size)
+
         if self.training:
             self.update(x)
-
         x = self.normalize(x)
 
+        x = x.view(init_shape)
         return x
 
     def update(self, v):
@@ -762,7 +815,7 @@ if __name__ == '__main__':
         obs_dim=state_dim,
         action_dim=action_dim,
         shared_sizes=(5, 4),
-        intention_sizes=(10, 15, 3),
+        unintention_sizes=(10, 15, 3),
         shared_non_linear='relu',
         shared_batch_norm=False,
         intention_non_linear='relu',
@@ -812,7 +865,6 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.plot(errors)
     plt.show()
-
 
     # optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
     #

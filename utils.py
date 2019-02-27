@@ -31,6 +31,7 @@ def interaction(env, policy, obs, device='cpu', dtype=torch.float32,
 def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             render=False, return_info=False,
             device='cpu',
+            q_fcn=None,
             **pol_kwargs):
 
     rollout_obs = list()
@@ -40,6 +41,7 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
     rollout_done = list()
     rollout_reward_vector = list()
     rollout_done_vector = list()
+    rollout_q_vals = list()
 
     intention = pol_kwargs.get('intention', None)
 
@@ -55,6 +57,19 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         )
         # elapsed_time = time.time() - start_time
         # print(elapsed_time)
+
+        q_vals = None
+        # if q_fcn is not None:
+        #     q_vals = q_fcn(torch_ify(obs[None],
+        #                              device=device,
+        #                              dtype=torch.float32),
+        #                    interaction_info['action'],
+        #                    )
+        #     q_vals = np_ify(q_vals).squeeze()
+        #     # print('vals', q_vals, '|', np.linalg.norm(env._wrapped_env.get_tray_pose()[:3]), env._wrapped_env.get_observation()[14:20])
+        #     print('vals', q_vals)
+        #     time.sleep(0.04)
+
         if render:
             env.render()
 
@@ -66,11 +81,11 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             rollout_done.append(interaction_info['done'])
             rollout_reward_vector.append(interaction_info['reward_vector'])
             rollout_done_vector.append(interaction_info['done_vector'])
+            rollout_q_vals.append(q_vals)
 
         obs = interaction_info['next_obs']
         is_done = interaction_info['done'] if intention is None \
             else interaction_info['done_vector'][intention]
-        # print(intention, interaction_info['done'], interaction_info['done_vector'])
         if not fixed_horizon and is_done:
             print("The rollout has finished because the environment is done!")
             break

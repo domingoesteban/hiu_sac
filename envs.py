@@ -13,7 +13,7 @@ def get_env_and_params(env_name):
             alpha=1e-1,
             # Initial Condition
             init_position=(4., 4.),
-            init_sigma=1.00,
+            init_sigma=0.10,
             # Goal
             goal_position=(-2.0, -2.0),  # TODO: Make this a script param
             goal_threshold=0.10,
@@ -39,11 +39,12 @@ def get_env_and_params(env_name):
             # obs_with_goal=False,
             # goal_pose=(0.65, 0.65),
             goal_pose=(0.65, 0.35),
-            # rdn_goal_pos=True,
-            rdn_goal_pos=False,
+            rdn_goal_pos=True,
+            # rdn_goal_pos=False,
             robot_config=None,
             rdn_robot_config=True,
-            goal_cost_weight=4.0e0,
+            # goal_cost_weight=4.0e0,  # Antes de 27/02 9.21pm
+            goal_cost_weight=3.0e0,
             ctrl_cost_weight=5.0e-1,
             goal_tolerance=0.01,
             use_log_distances=True,
@@ -51,7 +52,7 @@ def get_env_and_params(env_name):
             # max_time=PATH_LENGTH*DT,
             max_time=None,
             sim_timestep=1.e-3,
-            frame_skip=10,
+            frame_skip=50,
             half_env=True,
             subtask=None,
             seed=610,
@@ -62,8 +63,8 @@ def get_env_and_params(env_name):
 
         env_params = dict(
             is_render=False,
-            # obs_distances=False,
-            obs_distances=True,
+            obs_distances=False,
+            # obs_distances=True,
             obs_with_img=False,
             # obs_with_ori=True,
             obs_with_ori=False,
@@ -73,15 +74,16 @@ def get_env_and_params(env_name):
             rdn_tgt_object_pose=True,
             robot_config=None,
             rdn_robot_config=True,
-            tgt_cost_weight=5.0,
-            goal_cost_weight=3.0,
-            ctrl_cost_weight=1.0e-3,
+            tgt_cost_weight=0.5,
+            goal_cost_weight=1.5,
+            ctrl_cost_weight=1.0e-5,
             no_task_weight=1.0,
             goal_tolerance=0.01,
             # max_time=PATH_LENGTH*DT,
             max_time=None,
             sim_timestep=1.e-3,
-            frame_skip=10,
+            # frame_skip=10,  # Antes de 26-02
+            frame_skip=50,
             subtask=None,
             seed=610,
         )
@@ -97,13 +99,13 @@ def get_env_and_params(env_name):
             active_joints='RA',
             control_mode='joint_tasktorque',
             # _control_mode='torque',
-            balance_cost_weight=1.0,
-            fall_cost_weight=1.0,
-            tgt_cost_weight=3.0,
+            balance_cost_weight=0.3,
+            fall_cost_weight=0.6,
+            tgt_cost_weight=15.0,
             # tgt_cost_weight=50.0,
             balance_done_cost=0.,  # 2.0*PATH_LENGTH,  # TODO: dont forget same balance weight
             tgt_done_reward=0.,  # 20.0,
-            ctrl_cost_weight=1.0e-1,
+            ctrl_cost_weight=1.0e-2,
             use_log_distances=True,
             log_alpha_pos=1e-4,
             log_alpha_ori=1e-4,
@@ -115,7 +117,9 @@ def get_env_and_params(env_name):
             sim_timestep=0.01,
             frame_skip=1,
             subtask=None,
-            random_init=True,
+            random_tgt=True,
+            random_config=False,
+            # random_init=True,
             seed=610,
         )
         env_fcn = CentauroTrayEnv
@@ -130,7 +134,8 @@ def get_normalized_env(env_name, subtask=None, seed=610, render=False,
     env_fcn, env_params = get_env_and_params(env_name)
     if new_env_params is not None:
         env_params.update(new_env_params)
-    env_params['subtask'] = subtask
+    else:
+        env_params['subtask'] = subtask
     env_params['seed'] = seed
     if not env_name.lower() == 'navigation2d':
         env_params['is_render'] = render
@@ -180,10 +185,10 @@ class NormalizedEnv:
         return next_obs, reward, done, info
 
     def seed(self, *args, **kwargs):
-        self._wrapped_env.seed(*args, **kwargs)
+        return self._wrapped_env.seed(*args, **kwargs)
 
     def render(self, *args, **kwargs):
-        self._wrapped_env.render(*args, **kwargs)
+        return self._wrapped_env.render(*args, **kwargs)
 
     @property
     def n_subgoals(self):
@@ -202,4 +207,7 @@ class NormalizedEnv:
         return type(self._wrapped_env).__name__
 
     def set_subtask(self, subtask):
-        self._wrapped_env.set_subtask(subtask)
+        return self._wrapped_env.set_subtask(subtask)
+
+    def get_subtask(self):
+        return self._wrapped_env.get_subtask()

@@ -13,6 +13,7 @@ def get_csv_data(csv_file, labels, space_separated=False):
     data, all_labels = get_csv_data_and_labels(csv_file,
                                                space_separated=space_separated)
     # Uncommont to print the labels
+    print(csv_file)
     for label in all_labels:
         print(label)
     print('***\n'*3)
@@ -99,14 +100,14 @@ def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
 
     if num_intentions is None:
         num_intentions = 0
-    else:
-        num_intentions += 1
+    # else:
+    #     num_intentions += 1
 
     # Add Intentional-Unintentional Label
     new_labels = list()
     for label in labels_to_plot:
         for uu in range(num_intentions):
-            new_string = ('[U-%02d] ' % uu) + label
+            new_string = label + (' [%02d]' % uu)
             new_labels.append(new_string)
 
         # Assuming the Main does not have a prefix
@@ -136,43 +137,50 @@ def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
 
 
 def plot_intentions_info(csv_file, num_intentions=None, block=False):
-    labels_to_plot = ['Alpha']
+    infos_to_plot = [
+        'Alpha',
+        'Entropy',
+    ]
+
+    adim=3
+    for ii in range(adim):
+        infos_to_plot.append('Std Action %02d' % ii)
+    # for ii in range(adim):
+    #     infos_to_plot.append('Mean Action %02d' % ii)
 
     if num_intentions is None:
         num_intentions = 0
-    else:
-        num_intentions += 1
+    # else:
+    #     num_intentions += 1
 
-    # Add Intentional-Unintentional Label
-    new_labels = list()
-    for label in labels_to_plot:
+    for label in infos_to_plot:
+        # Add Intentional-Unintentional Label
+        new_labels = list()
         for uu in range(num_intentions):
-            new_string = label + ('[U-%02d] ' % uu)
-            print(new_string)
-            input('fdsaf')
+            new_string = label + (' [U-%02d]' % uu)
             new_labels.append(new_string)
 
         # Assuming the Main does not have a prefix
         new_string = label
         new_labels.append(new_string)
 
-    n_subplots = len(labels_to_plot) * (num_intentions + 1)
+        n_subplots = (num_intentions + 1)
 
-    data = get_csv_data(csv_file, new_labels)
+        data = get_csv_data(csv_file, new_labels)
 
-    fig, axs = subplots(n_subplots)
-    if not isinstance(axs, np.ndarray):
-        axs = np.array([axs])
-    fig.subplots_adjust(hspace=0)
-    fig.suptitle('Alpha', fontweight='bold')
+        fig, axs = subplots(n_subplots)
+        if not isinstance(axs, np.ndarray):
+            axs = np.array([axs])
+        fig.subplots_adjust(hspace=0)
+        fig.suptitle(label, fontweight='bold')
 
-    for aa, ax in enumerate(axs):
-        ax.plot(data[aa])
-        ax.set_ylabel(new_labels[aa])
-        plt.setp(ax.get_xticklabels(), visible=False)
+        for aa, ax in enumerate(axs):
+            ax.plot(data[aa])
+            ax.set_ylabel(new_labels[aa])
+            plt.setp(ax.get_xticklabels(), visible=False)
 
-    axs[-1].set_xlabel('Episodes')
-    plt.setp(axs[-1].get_xticklabels(), visible=True)
+        axs[-1].set_xlabel('Episodes')
+        plt.setp(axs[-1].get_xticklabels(), visible=True)
 
     print('total_iters:', len(data[-1]))
     plt.show(block=block)
@@ -223,8 +231,6 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
 
     all_axs = np.atleast_1d(all_axs)
 
-    all_axs[-1].set_title('Main Task',
-                          fontdict={'fontsize': 30, 'fontweight': 'medium'})
 
     all_obs = torch.tensor(obs, dtype=torch.float32, device=device)
     all_obs = all_obs.expand_as(all_acts)
@@ -232,21 +238,26 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
     q_vals = qf(all_obs, all_acts).squeeze(-1).detach()
 
     if policy is not None:
-        n_samples = 50
+        n_samples = 100
         torch_obs = torch.tensor(obs, dtype=torch.float32, device=device)
         torch_obs = torch_obs.expand(n_samples, -1)
         actions, pol_info = policy(torch_obs,
                                    deterministic=False,
                                    intention=None)
         actions = actions.detach().numpy()
-        intention_actions = pol_info['action_vect'].detach().numpy()
+        intention_actions = pol_info['u_actions'].detach().numpy()
 
     for intention in range(num_intentions + 1):
-        ax = all_axs[intention]
+        if intention < num_intentions:
+            ax = all_axs[intention+1]
+        else:
+            ax = all_axs[0]
         plot_contours(ax, x_mesh, y_mesh, q_vals[:, :, intention])
 
-        ax.set_xlabel('Vel. X', fontweight='bold', fontsize=18)
-        ax.set_ylabel('Vel. Y', fontweight='bold', fontsize=18)
+        ax.set_xlabel('Action %2d' % action_dims[0], #fontweight='bold',
+                      fontsize=24)
+        ax.set_ylabel('Action %2d' % action_dims[1], #fontweight='bold',
+                      fontsize=24)
         ax.axis('equal')
         ax.set_aspect('equal', 'box')
         ax.grid(False)
@@ -264,38 +275,102 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
             ax.scatter(x, y, c='b', marker='*', zorder=5)
 
         if intention < num_intentions:
-            ax.set_title('Sub-Task %02d' % (intention+1),
-                         fontdict={'fontsize': 30,
+            ax.set_title('Composable Task %01d' % (intention+1),
+                         fontdict={'fontsize': 32,
                                    'fontweight': 'medium'}
                          )
+        else:
+            ax.set_title('Compound Task',
+                         fontdict={'fontsize': 32,
+                                   'fontweight': 'medium'})
+        if ax != all_axs[0]:
+        # if intention > 0:
+            plt.setp(ax.get_yticklabels(), visible=False)
+            # ax.yaxis.set_visible(False)
+            ax.yaxis.label.set_visible(False)
+
+        ax.xaxis.set_major_locator(plt.MultipleLocator(0.5))
+        ax.xaxis.set_minor_locator(plt.MultipleLocator(0.1))
+        ax.yaxis.set_major_locator(plt.MultipleLocator(0.5))
+        ax.yaxis.set_minor_locator(plt.MultipleLocator(0.1))
 
     plt.show()
 
 
 def plot_multiple_intentions_eval_returns(
         csv_file_dict,
-        block=False
+        max_iters=None,
+        block=False,
+        save_fig_name=None,
 ):
     label_to_plot = 'Test Returns Mean'
     label_x_axis = 'Episodes'
     label_y_axis = 'Average Return'
-    x_major_loc = 10
-    x_minor_loc = 5
-    axis_fontsize = 50
 
-    for fig_name, fig_dict in csv_file_dict.items():
-        fig, axs = subplots(1)
-        if not isinstance(axs, np.ndarray):
-            axs = np.array([axs])
-        fig.subplots_adjust(hspace=0)
-        fig_name = fig_name.replace(" ", "_")
-        fig.canvas.set_window_title(fig_name)
+    # x_major_loc = 10
+    # x_minor_loc = 5
+    x_major_loc = 20
+    x_minor_loc = 10
 
-        ax = axs[-1]
-        lines = list()
-        labels = list()
-        for item_name, item_dict in fig_dict.items():
+    # # One per figure
+    # title_fontsize = 50
+    # axis_fontsize = 40
+    # legend_fontsize = 40
+    # xtick_fontsize = 25
+    # ytick_fontsize = 15
+    # linewidth = 5
+    # std_alpha = .20
+
+    # Three per figure
+    title_fontsize = 16
+    axis_fontsize = 14
+    legend_fontsize = 14
+    xtick_fontsize = 12
+    ytick_fontsize = 10
+    # linewidth = 3
+    linewidth = 2
+    std_alpha = .20
+
+    color_list = [
+        (0.55294118,  0.62745098,  0.79607843),  # Blue
+        (0.98823529,  0.55294118,  0.38431373),  # Orange
+        (0.40000000,  0.76078431,  0.64705882),  # Green
+        'red',
+    ]
+
+    fig, axs = subplots(1, len(csv_file_dict))
+    if not isinstance(axs, np.ndarray):
+        axs = np.array([axs])
+    fig.subplots_adjust(hspace=0)
+    fig.subplots_adjust(wspace=0)
+    # fig.canvas.set_window_title('cucu'.replace(" ", "_"))
+
+    for ax, (fig_name, fig_dict) in zip(axs, csv_file_dict.items()):
+    # for fig_name, fig_dict in csv_file_dict.items():
+        # fig, axs = subplots(1)
+        # if not isinstance(axs, np.ndarray):
+        #     axs = np.array([axs])
+        # fig.subplots_adjust(hspace=0)
+        # fig.canvas.set_window_title(fig_name.replace(" ", "_"))
+        # ax = axs[-1]
+
+        if ax == axs[0]:
+            lines = list()
+            labels = list()
+
+        for cc, (item_name, item_dict) in enumerate(fig_dict.items()):
             subtask = item_dict['subtask']
+
+            color = item_dict['color']
+            if color is None:
+                if item_dict['algo'].lower() in 'sac':
+                    color = color_list[0]
+                elif item_dict['algo'].lower() in 'hiusac':
+                    color = color_list[1]
+                elif item_dict['algo'].lower() in 'hiusac-p':
+                    color = color_list[2]
+                else:
+                    color = color_list[3]
 
             if subtask > -1:
                 new_label_to_plot = label_to_plot + (' [%02d]' % subtask)
@@ -308,41 +383,97 @@ def plot_multiple_intentions_eval_returns(
             seeded_data = np.array(data_list)
 
             data_mean = seeded_data.mean(axis=0)
-            data_std = seeded_data.mean(axis=0)
-
+            data_std = seeded_data.std(axis=0)
             x_data = np.arange(0, len(data_mean))
+
+            # interactions_label = 'Accumulated Training Steps'
+            # ninteraction_list = list()
+            # for csv_file in item_dict['progress_files']:
+            #     data = get_csv_data(csv_file, [interactions_label]).squeeze()
+            #     ninteraction_list.append(ninteraction_data)
+            # ninteraction_data = np.array(ninteraction_list)
+            # ninteract = ninteraction_data.mean(axis=0)
+
+            if max_iters is not None:
+                data_mean = data_mean[:max_iters]
+                data_std = data_std[:max_iters]
+                x_data = x_data[:max_iters]
 
             ax.fill_between(
                 x_data,
                 (data_mean - 0.5 * data_std),
-                (data_mean + 0.5 * data_std), alpha=.3)
-            mean_plot = ax.plot(x_data, data_mean)[0]
-            lines.append(mean_plot)
+                (data_mean + 0.5 * data_std),
+                alpha=std_alpha,
+                color=color,
+            )
+            mean_plot = ax.plot(
+                x_data,
+                data_mean,
+                color=color,
+                zorder=5,
+                linestyle='-',
+                linewidth=linewidth,
+            )[0]
+            if ax == axs[0]:
+                lines.append(mean_plot)
 
-            if item_dict['algo'].lower() == 'hiusac':
-                if subtask == -1:
-                    i_suffix = ' [I]'
-                else:
-                    i_suffix = ' [U-%02d]' % (subtask + 1)
-            else:
+                # if item_dict['algo'].lower() in ['hiusac', 'hiusac-p', 'hiusac-m']:
+                #     if subtask == -1:
+                #         i_suffix = ' [I]'
+                #     else:
+                #         i_suffix = ' [U-%02d]' % (subtask + 1)
+                # else:
+                #     i_suffix = ''
                 i_suffix = ''
-            labels.append(item_name + i_suffix)
+                labels.append(item_name + i_suffix)
 
         xdiff = x_data[1] - x_data[0]
-        ax.set_xlim(x_data[0]-xdiff, x_data[-1] + xdiff)
+        ax.set_xlim(x_data[0]-xdiff*1.5, x_data[-1] + xdiff*2.5)
         ax.set_ylabel(label_y_axis, fontsize=axis_fontsize)
-        plt.setp(ax.get_xticklabels(), visible=False)
         ax.xaxis.set_major_locator(plt.MultipleLocator(x_major_loc))
         ax.xaxis.set_minor_locator(plt.MultipleLocator(x_minor_loc))
+        # plt.setp(ax.get_xticklabels(), visible=True)
 
-        axs[-1].set_xlabel(label_x_axis, fontsize=axis_fontsize)
-        plt.setp(axs[-1].get_xticklabels(), visible=True)
+        ax.set_xlabel(label_x_axis, fontsize=axis_fontsize)
+        # plt.setp(axs[-1].get_xticklabels(), visible=True)
 
-        legend = fig.legend(lines, labels, loc='lower right', ncol=1,
-                            # legend = fig.legend(lines, labels, loc=(-1, 0), ncol=1,
-                            labelspacing=0., prop={'size': 40})
-        fig.set_size_inches(19, 11)  # 1920 x 1080
-        fig.tight_layout()
-        legend.draggable(True)
+        ax.xaxis.set_tick_params(labelsize=xtick_fontsize)
+        ax.yaxis.set_tick_params(labelsize=ytick_fontsize)
 
-    plt.show(block=block)
+        ax.set_title(fig_name, fontsize=title_fontsize)
+        #
+        # # legend = fig.legend(lines, labels, loc='lower right', ncol=1,
+        # #                     # legend = fig.legend(lines, labels, loc=(-1, 0), ncol=1,
+        # #                     labelspacing=0., prop={'size': legend_fontsize})
+        # # legend.draggable(True)
+        #
+        # fig.set_size_inches(19*3, 11)  # 1920 x 1080
+
+        # fig.tight_layout()
+
+        # ax.get_yaxis().set_visible(False)
+        # plt.setp(ax.get_ylabels(), visible=True)
+        plt.setp(ax.get_yticklines(), visible=True)
+        ax.tick_params(axis="y", direction="in", pad=-22)
+        ax.tick_params(labelleft=False)
+
+        ax.yaxis.label.set_visible(False)
+
+    legend = fig.legend(lines, labels, loc='lower center', ncol=3,
+                        labelspacing=0., prop={'size': legend_fontsize})
+    # legend.draggable(True)
+
+    axs[0].get_yaxis().set_visible(True)
+    axs[0].yaxis.label.set_visible(True)
+    fig.set_size_inches(12, 3)  # 1920 x 1080
+    # fig.set_size_inches(20, 7)  # 1920 x 1080
+    fig.subplots_adjust(wspace=0)
+    fig.subplots_adjust(hspace=0)
+    fig.tight_layout()
+    plt.subplots_adjust(bottom=0.31)
+    plt.subplots_adjust(wspace=0.03, hspace=0)
+
+    if save_fig_name is not None:
+        fig.savefig(save_fig_name)
+
+    # plt.show(block=block)

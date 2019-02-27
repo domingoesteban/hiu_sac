@@ -4,28 +4,35 @@
 # VARS #
 # #### #
 gpu_id=${1-cpu}
-env_name='navigation2d'
-#env_name='reacher'
-#env_name='pusher'
-#env_name='centauro'
-algo_name='hiusac-p'
+
+#env_names=('navigation2d')
+#env_names=('reacher')
+env_names=('pusher')
+#env_names=('centauro')
+#env_names=('centauro' 'reacher')
+total_envs=${#env_names[@]}
+
+algo_name='sac'
 #algo_name='hiusac'
-#algo_name='sac'
+#algo_name='hiusac-p'
+#algo_name='hiusac-m'
+
 dir_prefix=${algo_name}
 #dir_prefix=${algo_name}
 
-python_script=${env_name}'_'${algo_name}
-log_dir_path='./logs/'${env_name}'/'
 
 #seeds=(610 710 810 910 1010)
-#seeds=(610 810 1010)
+#seeds=(910)
+#seeds=(810 1010)
+seeds=(610 810 1010)
 #seeds=(810 1010)
 seeds=(610)
 total_seeds=${#seeds[@]}
 
-#subtasks=(0 1 -1)
+subtasks=(-1 0 1)
 #subtasks=(0 1)
-subtasks=(-1)
+#subtasks=(1)
+#subtasks=(-1)
 #subtasks=("${@:-${default_subtasks[@]}}")
 total_subtasks=${#subtasks[@]}
 
@@ -37,10 +44,16 @@ echo "Total seeds: ${#seeds[@]}"
 echo "Experiment seeds: ${seeds[@]}"
 echo ""
 
+for env_idx in ${!env_names[@]}; do
 for seed_idx in ${!seeds[@]}; do
 for subtask_idx in ${!subtasks[@]}; do
     seed=${seeds[seed_idx]}
     subtask=${subtasks[subtask_idx]}
+    env_name=${env_names[env_idx]}
+
+    python_script=${env_name}'_'${algo_name}
+    log_dir_path='./logs/'${env_name}'/'
+
 #    script_index=$((index+init_index))
     script_index=$(((seed_idx)*total_subtasks + subtask_idx))
     echo "********************************************************"
@@ -66,5 +79,7 @@ for subtask_idx in ${!subtasks[@]}; do
 
     # Run training script
     python train.py ${training_options}
+
+done
 done
 done

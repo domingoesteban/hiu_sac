@@ -1,53 +1,121 @@
 import os
 import os.path as osp
-from plots import plot_multiple_intentions_eval_returns
+from plots import plot_multiple_intentions_eval_returns, set_latex_plot
 
 
 def list_files_startswith(directory, prefix):
     return list(f for f in os.listdir(directory) if f.startswith(prefix))
 
 
-env_name = 'navigation2d'
+# env_name = 'navigation2d'
+# env_name = 'reacher'
+# env_name = 'pusher'
+env_name = 'centauro'
 base_log_dir = './logs'
 progress_file = 'progress.csv'
+# max_iters = None
+max_iters = 300
+# seeds = [610, 810, 1010, 710, 910]
+# seeds = [610, 810, 1010]
+seeds = [610]
+
+# last_idx = -1
+last_idx = -2
+# last_idx = -3
+#
+save_fig_name = osp.join('paper_plots', 'learning_' + env_name + '.pdf')
 
 
 log_dict = dict()
-log_dict['Main Task'] = dict()
-log_dict['Main Task']['SAC'] = dict(
-    algo='sac',
+log_dict['Compound Task'] = dict()
+# log_dict['Compound Task']['SAC'] = dict(
+#     algo='sac',
+#     subtask=-1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+# log_dict['Compound Task']['HIUSAC-1'] = dict(
+#     algo='hiusac',
+#     subtask=-1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+log_dict['Compound Task']['HIUSAC-2'] = dict(
+    algo='hiusac-p',
     subtask=-1,
-    seeds=[610, 810, 1010],
+    seeds=seeds,
+    last_idx=last_idx,
+    color=None,
 )
-log_dict['Main Task']['HIUSAC'] = dict(
-    algo='hiusac',
+log_dict['Compound Task']['HIUSAC-2-2'] = dict(
+    algo='hiusac-p',
     subtask=-1,
-    seeds=[610, 810, 1010],
+    seeds=seeds,
+    last_idx=-1,
+    color='red',
 )
 
-log_dict['Sub Task 1'] = dict()
-log_dict['Sub Task 1']['SAC'] = dict(
-    algo='sac',
+log_dict['Composable Task 1'] = dict()
+# log_dict['Composable Task 1']['SAC'] = dict(
+#     algo='sac',
+#     subtask=0,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+# log_dict['Composable Task 1']['HIUSAC-1'] = dict(
+#     algo='hiusac',
+#     subtask=0,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+log_dict['Composable Task 1']['HIUSAC-2'] = dict(
+    algo='hiusac-p',
     subtask=0,
-    seeds=[610, 810, 1010],
+    seeds=seeds,
+    last_idx=last_idx,
+    color=None,
 )
-log_dict['Sub Task 1']['HIUSAC'] = dict(
-    algo='hiusac',
-    subtask=0,
-    seeds=[610, 810, 1010],
-)
+# log_dict['Composable Task 1']['HIUSAC-2-2'] = dict(
+#     algo='hiusac-p',
+#     subtask=0,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color='red',
+# )
 
-log_dict['Sub Task 2'] = dict()
-log_dict['Sub Task 2']['SAC'] = dict(
-    algo='sac',
+log_dict['Composable Task 2'] = dict()
+# log_dict['Composable Task 2']['SAC'] = dict(
+#     algo='sac',
+#     subtask=1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+# log_dict['Composable Task 2']['HIUSAC-1'] = dict(
+#     algo='hiusac',
+#     subtask=1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color=None,
+# )
+log_dict['Composable Task 2']['HIUSAC-2'] = dict(
+    algo='hiusac-p',
     subtask=1,
-    seeds=[610, 810, 1010],
+    seeds=seeds,
+    last_idx=last_idx,
+    color=None,
 )
-log_dict['Sub Task 2']['HIUSAC'] = dict(
-    algo='hiusac',
-    subtask=1,
-    seeds=[610, 810, 1010],
-)
+# log_dict['Composable Task 2']['HIUSAC-2-2'] = dict(
+#     algo='hiusac-p',
+#     subtask=1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color='red',
+# )
 
 for pd in log_dict.values():
     for ld in pd.values():
@@ -71,7 +139,9 @@ for pd in log_dict.values():
             if not len(all_matching_log_dirs) > 0:
                 raise FileNotFoundError("No file found starting with % s" %
                                         (osp.join(full_path, log_dir_name)+'*'))
-            recent_dir = all_matching_log_dirs[-1]
+            if abs(ld['last_idx']) > len(all_matching_log_dirs):
+                ld['last_idx'] = -1
+            recent_dir = all_matching_log_dirs[ld['last_idx']]
             file = osp.join(full_path, recent_dir, progress_file)
             plot_progress_files.append(file)
 
@@ -80,9 +150,16 @@ for pd in log_dict.values():
         if algo == 'sac':
             ld['subtask'] = -1
 
-plot_multiple_intentions_eval_returns(log_dict)
+set_latex_plot()
 
-input('fasdf')
+plot_multiple_intentions_eval_returns(
+    log_dict,
+    max_iters=max_iters,
+    block=False,
+    save_fig_name=save_fig_name,
+)
+
+# input('Press a key to close the script...')
 
 
 print("The script has finished. Bye!")
