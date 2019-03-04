@@ -309,8 +309,10 @@ def plot_multiple_intentions_eval_returns(
 
     # x_major_loc = 10
     # x_minor_loc = 5
-    x_major_loc = 20
-    x_minor_loc = 10
+    x_major_loc = 50
+    x_minor_loc = 25
+    # x_major_loc = 20
+    # x_minor_loc = 10
 
     # # One per figure
     # title_fontsize = 50
@@ -325,11 +327,17 @@ def plot_multiple_intentions_eval_returns(
     title_fontsize = 16
     axis_fontsize = 14
     legend_fontsize = 14
-    xtick_fontsize = 12
+    xtick_fontsize = 9
     ytick_fontsize = 10
     # linewidth = 3
-    linewidth = 2
+    linewidth = 1
     std_alpha = .20
+    
+    z_confi = 1.282  # 80%
+    # z_confi = 1.440  # 85%
+    # z_confi = 1.645  # 90%
+    # z_confi = 1.960  # 95%
+    # z_confi = 2.576  # 99%
 
     color_list = [
         (0.55294118,  0.62745098,  0.79607843),  # Blue
@@ -358,6 +366,9 @@ def plot_multiple_intentions_eval_returns(
             lines = list()
             labels = list()
 
+        max_x = 0
+        min_x = 0
+        min_xdiff = np.inf
         for cc, (item_name, item_dict) in enumerate(fig_dict.items()):
             subtask = item_dict['subtask']
 
@@ -377,10 +388,18 @@ def plot_multiple_intentions_eval_returns(
             else:
                 new_label_to_plot = label_to_plot
             data_list = list()
+            max_available_iters = max_iters
             for csv_file in item_dict['progress_files']:
                 data = get_csv_data(csv_file, [new_label_to_plot]).squeeze()
                 data_list.append(data)
+                print('&&&')
+                print('&&&', csv_file, '--->', len(data))
+                print('&&&')
+                max_available_iters = min(max_available_iters, len(data))
+            data_list = [data[:min(max_available_iters, max_iters)]
+                         for data in data_list]
             seeded_data = np.array(data_list)
+            n_seeds = seeded_data.shape[0]
 
             data_mean = seeded_data.mean(axis=0)
             data_std = seeded_data.std(axis=0)
@@ -401,8 +420,8 @@ def plot_multiple_intentions_eval_returns(
 
             ax.fill_between(
                 x_data,
-                (data_mean - 0.5 * data_std),
-                (data_mean + 0.5 * data_std),
+                (data_mean - z_confi * data_std/np.sqrt(n_seeds)),
+                (data_mean + z_confi * data_std/np.sqrt(n_seeds)),
                 alpha=std_alpha,
                 color=color,
             )
@@ -410,7 +429,7 @@ def plot_multiple_intentions_eval_returns(
                 x_data,
                 data_mean,
                 color=color,
-                zorder=5,
+                zorder=10,
                 linestyle='-',
                 linewidth=linewidth,
             )[0]
@@ -427,8 +446,13 @@ def plot_multiple_intentions_eval_returns(
                 i_suffix = ''
                 labels.append(item_name + i_suffix)
 
-        xdiff = x_data[1] - x_data[0]
-        ax.set_xlim(x_data[0]-xdiff*1.5, x_data[-1] + xdiff*2.5)
+            max_x = max(max_x, x_data[-1])
+            min_x = min(min_x, x_data[0])
+            min_xdiff = min(min_xdiff, x_data[1] - x_data[0])
+
+        # xdiff = x_data[1] - x_data[0]
+        # xdiff = max_x - min_x
+        ax.set_xlim(min_x-min_xdiff*1.5, max_x + min_xdiff*2.5)
         ax.set_ylabel(label_y_axis, fontsize=axis_fontsize)
         ax.xaxis.set_major_locator(plt.MultipleLocator(x_major_loc))
         ax.xaxis.set_minor_locator(plt.MultipleLocator(x_minor_loc))

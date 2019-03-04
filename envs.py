@@ -63,8 +63,8 @@ def get_env_and_params(env_name):
 
         env_params = dict(
             is_render=False,
-            obs_distances=False,
-            # obs_distances=True,
+            # obs_distances=False,
+            obs_distances=True,
             obs_with_img=False,
             # obs_with_ori=True,
             obs_with_ori=False,
@@ -75,7 +75,8 @@ def get_env_and_params(env_name):
             robot_config=None,
             rdn_robot_config=True,
             tgt_cost_weight=0.5,
-            goal_cost_weight=1.5,
+            # goal_cost_weight=1.5,
+            goal_cost_weight=8,  # Desde 01-03 a las 4.30pm
             ctrl_cost_weight=1.0e-5,
             no_task_weight=1.0,
             goal_tolerance=0.01,
@@ -211,3 +212,9 @@ class NormalizedEnv:
 
     def get_subtask(self):
         return self._wrapped_env.get_subtask()
+
+    def stop_recording_video(self):
+        return self._wrapped_env.stop_recording_video()
+
+    def start_recording_video(self, file_name=None):
+        return self._wrapped_env.start_recording_video(file_name=file_name)

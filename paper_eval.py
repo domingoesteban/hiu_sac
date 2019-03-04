@@ -8,40 +8,53 @@ def list_files_startswith(directory, prefix):
 
 
 # env_name = 'navigation2d'
-# env_name = 'reacher'
-# env_name = 'pusher'
-env_name = 'centauro'
+# env_name = 'reacher'  # Do not use 810
+env_name = 'pusher'
+# env_name = 'centauro'
 base_log_dir = './logs'
 progress_file = 'progress.csv'
 # max_iters = None
+max_iters = 250
 max_iters = 300
 # seeds = [610, 810, 1010, 710, 910]
+# seeds = [610, 1010, 910, 710]
 # seeds = [610, 810, 1010]
-seeds = [610]
+# seeds = [710, 1010, 610]
+seeds = [1010, 610, 810]  # Pusher
+# seeds = [1010, 610, 710]  # Centauro
+# seeds = [510, 610, 710, 810, 910, 1010]
+# seeds = [610, 710, 1010, 510]  # Reacher
 
-# last_idx = -1
-last_idx = -2
+# seeds = [510]
+# seeds = [610]
+# seeds = [710]
+# seeds = [810]
+# seeds = [910]
+# seeds = [1010]
+
+last_idx = -1
+# last_idx = -2
 # last_idx = -3
 #
-save_fig_name = osp.join('paper_plots', 'learning_' + env_name + '.pdf')
+save_fig_name = osp.join('paper_plots', 'learning_' + env_name + 'X.pdf')
 
 
 log_dict = dict()
 log_dict['Compound Task'] = dict()
-# log_dict['Compound Task']['SAC'] = dict(
-#     algo='sac',
-#     subtask=-1,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
-# log_dict['Compound Task']['HIUSAC-1'] = dict(
-#     algo='hiusac',
-#     subtask=-1,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
+log_dict['Compound Task']['SAC'] = dict(
+    algo='sac',
+    subtask=-1,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
+log_dict['Compound Task']['HIUSAC-1'] = dict(
+    algo='hiusac',
+    subtask=-1,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
 log_dict['Compound Task']['HIUSAC-2'] = dict(
     algo='hiusac-p',
     subtask=-1,
@@ -49,29 +62,29 @@ log_dict['Compound Task']['HIUSAC-2'] = dict(
     last_idx=last_idx,
     color=None,
 )
-log_dict['Compound Task']['HIUSAC-2-2'] = dict(
-    algo='hiusac-p',
-    subtask=-1,
-    seeds=seeds,
-    last_idx=-1,
-    color='red',
-)
+# log_dict['Compound Task']['HIUSAC-2-2'] = dict(
+#     algo='hiusac-p',
+#     subtask=-1,
+#     seeds=seeds,
+#     last_idx=-1,
+#     color='red',
+# )
 
 log_dict['Composable Task 1'] = dict()
-# log_dict['Composable Task 1']['SAC'] = dict(
-#     algo='sac',
-#     subtask=0,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
-# log_dict['Composable Task 1']['HIUSAC-1'] = dict(
-#     algo='hiusac',
-#     subtask=0,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
+log_dict['Composable Task 1']['SAC'] = dict(
+    algo='sac',
+    subtask=0,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
+log_dict['Composable Task 1']['HIUSAC-1'] = dict(
+    algo='hiusac',
+    subtask=0,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
 log_dict['Composable Task 1']['HIUSAC-2'] = dict(
     algo='hiusac-p',
     subtask=0,
@@ -88,20 +101,20 @@ log_dict['Composable Task 1']['HIUSAC-2'] = dict(
 # )
 
 log_dict['Composable Task 2'] = dict()
-# log_dict['Composable Task 2']['SAC'] = dict(
-#     algo='sac',
-#     subtask=1,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
-# log_dict['Composable Task 2']['HIUSAC-1'] = dict(
-#     algo='hiusac',
-#     subtask=1,
-#     seeds=seeds,
-#     last_idx=-1,
-#     color=None,
-# )
+log_dict['Composable Task 2']['SAC'] = dict(
+    algo='sac',
+    subtask=1,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
+log_dict['Composable Task 2']['HIUSAC-1'] = dict(
+    algo='hiusac',
+    subtask=1,
+    seeds=seeds,
+    last_idx=-1,
+    color=None,
+)
 log_dict['Composable Task 2']['HIUSAC-2'] = dict(
     algo='hiusac-p',
     subtask=1,

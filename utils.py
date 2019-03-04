@@ -32,6 +32,8 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             render=False, return_info=False,
             device='cpu',
             q_fcn=None,
+            record_video_name=None,
+            end_fcn=None,
             **pol_kwargs):
 
     rollout_obs = list()
@@ -48,6 +50,8 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
     obs = env.reset()
     if render:
         env.render()
+    if record_video_name is not None:
+        env.start_recording_video(file_name=record_video_name)
     for step in range(max_horizon):
         # start_time = time.time()
         interaction_info = interaction(
@@ -68,7 +72,7 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         #     q_vals = np_ify(q_vals).squeeze()
         #     # print('vals', q_vals, '|', np.linalg.norm(env._wrapped_env.get_tray_pose()[:3]), env._wrapped_env.get_observation()[14:20])
         #     print('vals', q_vals)
-        #     time.sleep(0.04)
+        #     # time.sleep(0.02)
 
         if render:
             env.render()
@@ -90,6 +94,8 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
             print("The rollout has finished because the environment is done!")
             break
     # print("The rollout has finished because the maximum horizon is reached!")
+    if record_video_name is not None:
+        env.stop_recording_video()
 
     return dict(
         obs=rollout_obs,

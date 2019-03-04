@@ -5,6 +5,7 @@ import sys
 import os.path as osp
 import torch
 import json
+import pybullet as pb
 
 
 from envs import get_normalized_env
@@ -28,6 +29,8 @@ parser.add_argument('--task', '-t', type=int, default=None,
                     help='Task number [default: None (Main task)]')
 parser.add_argument('--horizon', '-n', type=int, default=None,
                     help='Rollout horizon [default: 100]')
+parser.add_argument('--iteration', '-i', type=int, default=None,
+                    help='Model iteration [default: last]')
 parser.add_argument('--gpu', type=int, default=-1,
                     help='GPU ID [default: -1 (cpu)]')
 parser.add_argument('--stochastic', action='store_true')
@@ -73,6 +76,29 @@ def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False,
         rollout_return = sum([info[task]
                               for info in rollout_info['reward_vector']])
     print("The rollout return is: %f" % rollout_return)
+
+
+def record_policy(env, policy, max_horizon=50, task=None, stochastic=False,
+                  q_fcn=None, video_name='hiu_sac'):
+    # video_name = 'temporal.mp4'
+    video_dir = 'videos'
+
+    video_name = osp.join(
+        video_dir,
+        video_name + '.mp4',
+    )
+
+    rollout_info = rollout(
+        env, policy,
+        max_horizon=max_horizon,
+        fixed_horizon=False,
+        device='cpu',
+        render=True,
+        intention=task, deterministic=not stochastic,
+        return_info=False,
+        q_fcn=q_fcn,
+        record_video_name=video_name,
+    )
 
 
 def plot_value_fcn(qf, policy, env):
@@ -153,36 +179,44 @@ if __name__ == '__main__':
     )
 
     # Get models from file
+    itr_dir = 'itr_%03d' % args.iteration if args.iteration is not None else 'last_itr'
     models_dir = osp.join(log_dir, 'models', 'last_itr')
     policy_file = osp.join(models_dir, 'policy.pt')
     qf_file = osp.join(models_dir, 'qf1.pt')
     policy = torch.load(policy_file, map_location=lambda storage, loc: storage)
     qf = torch.load(qf_file, map_location=lambda storage, loc: storage)
 
+    infinite_loop = False
     first_time = True
     while True:
-        if not first_time or args.option is None:
-            user_input = input("Select an option: \n"
-                               "\t'p':plot progress\n"
-                               "\t'v':plot_qval\n"
-                               "\t't':change policy task\n"
-                               "\t'et':change env task\n"
-                               "\t'h':change evaluation horizon\n"
-                               "\t'e':evaluate\n"
-                               "\t'n':navigation2d\n"
-                               "\t'q' to exit\n"
-                               "Option: ")
-        else:
-            user_input = args.option
-            first_time = False
+        if not infinite_loop:
+            if not first_time or args.option is None:
+                user_input = input("Select an option: \n"
+                                   "\t'p':plot progress\n"
+                                   "\t'v':plot_qval\n"
+                                   "\t't':change policy task\n"
+                                   "\t'i':change iteration\n"
+                                   "\t'et':change env task\n"
+                                   "\t'h':change evaluation horizon\n"
+                                   "\t'e':evaluate\n"
+                                   "\t'r':record interaction\n"
+                                   "\t'n':navigation2d\n"
+                                   "\t'q' to exit\n"
+                                   "Option: ")
+            else:
+                user_input = args.option
+                first_time = False
         # user_input = 'e'
         if user_input.lower() == 'q':
             print("Closing the script. Bye!")
             break
+
         elif user_input.lower() == 'p':
             plot_progress(progress_file, log_data['algo_name'])
+
         elif user_input.lower() == 'v':
             plot_value_fcn(qf, policy, env)
+
         elif user_input.lower() == 't':
             new_task = input("Specify task id (-1 for None). Task id: ")
             new_task = int(new_task)
@@ -190,6 +224,7 @@ if __name__ == '__main__':
                 print("Wrong option '%s'!" % new_task)
             args.task = None if new_task == -1 else new_task
             print("New task is %d" % new_task)
+
         elif user_input.lower() == 'et':
             new_task = input("Specify env_task id (-1 for None). Task id: ")
             try:
@@ -202,6 +237,7 @@ if __name__ == '__main__':
             else:
                 new_task = None if new_task == -1 else new_task
                 env.set_subtask(new_task)
+
         elif user_input.lower() == 'h':
             new_horizon = input("Specify new horizon: ")
             new_horizon = int(new_horizon)
@@ -210,6 +246,7 @@ if __name__ == '__main__':
             else:
                 args.horizon = new_horizon
                 print("New horizon is %d" % new_horizon)
+
         elif user_input.lower() == 'e':
             if args.horizon is not None:
                 horizon = args.horizon
@@ -219,8 +256,37 @@ if __name__ == '__main__':
                         stochastic=args.stochastic,
                         q_fcn=qf,
                         )
+        elif user_input.lower() == 'r':
+            if args.horizon is not None:
+                horizon = args.horizon
+            env_subtask = env.get_subtask()
+            if env_subtask is None:
+                env_subtask = -1
+            if args.task is None:
+                subtask = -1
+            else:
+                subtask = args.task
+            video_name = (
+                    env_name +
+                    ('_s%03d' % seed) +
+                    ('_task%01d' % subtask) +
+                    ('_envtask%01d' % env_subtask)
+            )
+            record_policy(env, policy,
+                          max_horizon=horizon,
+                          task=subtask,
+                          stochastic=args.stochastic,
+                          q_fcn=qf,
+                          video_name=video_name,
+                          )
+
         elif user_input.lower() == 'n':
             plot_navitation2d()
+
+        elif user_input.lower() == 'i':
+            user_input = 'e'
+            infinite_loop = True
+
         else:
             print("Wrong option!")
 

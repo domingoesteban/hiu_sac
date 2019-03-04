@@ -6,15 +6,15 @@
 gpu_id=${1-cpu}
 
 #env_names=('navigation2d')
-#env_names=('reacher')
-env_names=('pusher')
+env_names=('reacher')
+#env_names=('pusher')
 #env_names=('centauro')
 #env_names=('centauro' 'reacher')
 total_envs=${#env_names[@]}
 
 algo_name='sac'
-#algo_name='hiusac'
-#algo_name='hiusac-p'
+#algo_name='hiusac'  # HIU-1
+#algo_name='hiusac-p'  # HIU-2
 #algo_name='hiusac-m'
 
 dir_prefix=${algo_name}
@@ -22,17 +22,17 @@ dir_prefix=${algo_name}
 
 
 #seeds=(610 710 810 910 1010)
-#seeds=(910)
+#seeds=(710)
 #seeds=(810 1010)
-seeds=(610 810 1010)
+seeds=(510)
 #seeds=(810 1010)
-seeds=(610)
+#seeds=(610)
 total_seeds=${#seeds[@]}
 
-subtasks=(-1 0 1)
+#subtasks=(-1 0 1)
 #subtasks=(0 1)
 #subtasks=(1)
-#subtasks=(-1)
+subtasks=(-1)
 #subtasks=("${@:-${default_subtasks[@]}}")
 total_subtasks=${#subtasks[@]}
 
