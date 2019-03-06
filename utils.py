@@ -52,6 +52,7 @@ def rollout(env, policy, max_horizon=100, fixed_horizon=False,
         env.render()
     if record_video_name is not None:
         env.start_recording_video(file_name=record_video_name)
+        time.sleep(0.5)
     for step in range(max_horizon):
         # start_time = time.time()
         interaction_info = interaction(
