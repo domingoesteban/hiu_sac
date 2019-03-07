@@ -39,6 +39,7 @@ for itr_idx in ${!iterations[@]}; do
     --horizon ${horizon}
     --env_task ${env_task}
     --task ${task}
+    --option re
     "
     echo ${eval_options}
 

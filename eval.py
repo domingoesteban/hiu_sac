@@ -101,16 +101,11 @@ def record_policy(env, policy, max_horizon=50, task=None, stochastic=False,
     )
 
 
-def plot_value_fcn(qf, policy, env, actions_dims=(0, 1)):
-    obs = np.zeros(env.obs_dim)
-
-    obs[actions_dims[0]] = -6
-    obs[actions_dims[1]] = -6
-
+def plot_value_fcn(qf, policy, obs, action_lows, action_highs, actions_dims=(0, 1)):
     plots.plot_q_values(
         qf,
-        action_lower=env.action_space.low,
-        action_higher=env.action_space.high,
+        action_lower=action_lows,
+        action_higher=action_highs,
         obs=obs,
         policy=policy,
         action_dims=actions_dims,
@@ -151,8 +146,9 @@ if __name__ == '__main__':
         p="plot progress",
         v="plot qval",
         e="evaluate",
-        ei="evaluate infinite times!",
+        ie="evaluate infinite times!",
         r="record interaction",
+        re="record and exit",
         n="navigation2d",
         t="change policy task",
         i="change iteration",
@@ -167,33 +163,25 @@ if __name__ == '__main__':
     options_txt += "Option: "
 
     infinite_loop = False
-    first_time = True
     while True:
-        if not infinite_loop:
-            if not first_time or args.option is None:
-                user_input = input(options_txt)
-            else:
-                user_input = args.option
-                first_time = False
+        if args.option is None:
+            args.option = input(options_txt)
 
-        # if first_time:
-        #     user_input = 'r'
-        #     first_time = False
-        # else:
-        #     user_input = 'q'
-
-        # user_input = 'e'
-        if user_input.lower() == 'q':
+        if args.option.lower() == 'q':
             print("Closing the script. Bye!")
             break
 
-        elif user_input.lower() == 'p':
+        elif args.option.lower() == 'p':
             plot_progress(progress_file, log_data['algo_name'])
 
-        elif user_input.lower() == 'v':
-            plot_value_fcn(qf, policy, env)
+        elif args.option.lower() == 'v':
+            obs = np.zeros(env.obs_dim)
+            # TODO: Make this for all envs
+            obs[0] = -6
+            obs[1] = -6
+            plot_value_fcn(qf, policy, obs, env.action_space.low, env.action_space.high)
 
-        elif user_input.lower() == 'e':
+        elif args.option.lower() == 'e':
             if args.horizon is not None:
                 horizon = args.horizon
             eval_policy(env, policy,
@@ -203,7 +191,7 @@ if __name__ == '__main__':
                         q_fcn=qf,
                         )
 
-        elif user_input.lower() == 't':
+        elif args.option.lower() == 't':
             new_task = input("Specify task id (-1 for None). Task id: ")
             new_task = int(new_task)
             if new_task not in list(range(-1, policy.num_intentions)):
@@ -211,7 +199,7 @@ if __name__ == '__main__':
             args.task = None if new_task == -1 else new_task
             print("New task is %d" % new_task)
 
-        elif user_input.lower() == 'et':
+        elif args.option.lower() == 'et':
             new_task = input("Specify env_task id (-1 for None). Task id: ")
             try:
                 new_task = int(new_task)
@@ -224,7 +212,7 @@ if __name__ == '__main__':
                 new_task = None if new_task == -1 else new_task
                 env.set_subtask(new_task)
 
-        elif user_input.lower() == 'h':
+        elif args.option.lower() == 'h':
             new_horizon = input("Specify new horizon: ")
             new_horizon = int(new_horizon)
             if not new_horizon > 1:
@@ -233,7 +221,7 @@ if __name__ == '__main__':
                 args.horizon = new_horizon
                 print("New horizon is %d" % new_horizon)
 
-        elif user_input.lower() == 'r':
+        elif args.option.lower() in ['r', 're']:
             max_iter = 300
             max_rollouts = 10
             # range_list = list(range(0, max_iter, 25)) + [None]
@@ -242,55 +230,51 @@ if __name__ == '__main__':
             env_subtask = None if args.env_task == -1 else args.env_task
             env.set_subtask(env_subtask)
 
-            for ii in range_list:
-                # itr_dir = 'itr_%03d' % ii \
-                #     if ii > -1 else 'last_itr'
+            for rr in range(max_rollouts):
+                if args.horizon is not None:
+                    horizon = args.horizon
 
-                # models_dir = osp.join(log_dir, 'models', itr_dir)
-                # policy_file = osp.join(models_dir, 'policy.pt')
-                # qf_file = osp.join(models_dir, 'qf1.pt')
-                # policy = torch.load(policy_file, map_location=lambda storage, loc: storage)
-                # qf = torch.load(qf_file, map_location=lambda storage, loc: storage)
+                if env_subtask is None:
+                    env_subtask = -1
 
-                for rr in range(max_rollouts):
-                    if args.horizon is not None:
-                        horizon = args.horizon
+                if args.task is None:
+                    subtask = -1
+                else:
+                    subtask = args.task
 
-                    if env_subtask is None:
-                        env_subtask = -1
+                video_name = (
+                        itr_dir +
+                        ('_s%03d' % seed) +
+                        ('_task%01d' % subtask) +
+                        ('_envtask%01d' % env_subtask) +
+                        ('_rollout%02d' % rr)
+                )
+                video_name = osp.join(
+                    env_name,
+                    video_name
+                )
+                record_policy(env, policy,
+                              max_horizon=horizon,
+                              task=subtask,
+                              stochastic=args.stochastic,
+                              q_fcn=qf,
+                              video_name=video_name,
+                              )
+                n_rollouts += 1
 
-                    if args.task is None:
-                        subtask = -1
-                    else:
-                        subtask = args.task
+            if args.option.lower() == 're':
+                args.option = 'q'
+                infinite_loop = True
 
-                    video_name = (
-                            itr_dir +
-                            ('_s%03d' % seed) +
-                            ('_task%01d' % subtask) +
-                            ('_envtask%01d' % env_subtask) +
-                            ('_rollout%02d' % rr)
-                    )
-                    video_name = osp.join(
-                        env_name,
-                        video_name
-                    )
-                    record_policy(env, policy,
-                                  max_horizon=horizon,
-                                  task=subtask,
-                                  stochastic=args.stochastic,
-                                  q_fcn=qf,
-                                  video_name=video_name,
-                                  )
-                    n_rollouts += 1
-
-        elif user_input.lower() == 'n':
+        elif args.option.lower() == 'n':
             plots.plot_navitation2d()
 
-        elif user_input.lower() == 'ie':
-            user_input = 'e'
+        elif args.option.lower() == 'ie':
+            args.option = 'e'
             infinite_loop = True
-
         else:
             print("Wrong option!")
+
+        if not infinite_loop:
+            args.option = None
 
