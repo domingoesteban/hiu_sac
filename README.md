@@ -1,13 +1,13 @@
 ## Installation
 
-1. Clone robolearn_gym_envs
+1. Clone robolearn_envs
 ```
-git clone https://github.com/domingoesteban/robolearn_gym_envs_private robolearn_gym_envs
+git clone https://github.com/domingoesteban/robolearn_envs_private robolearn_envs
 ```
 
-2. Install robolearn_gym_envs
+2. Install robolearn_envs
 ```
-pip install robolearn_gym_envs
+pip install robolearn_envs
 ```
 
 3. Clone this repository

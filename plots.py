@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pandas as pd
 import traceback
+import plots
 
 
 def get_csv_data(csv_file, labels, space_separated=False):
@@ -501,3 +502,39 @@ def plot_multiple_intentions_eval_returns(
         fig.savefig(save_fig_name)
 
     # plt.show(block=block)
+
+
+def plot_navitation2d():
+    from envs import get_normalized_env
+    env, env_params = get_normalized_env(
+        'navigation2d',
+        None,
+        610,
+        False
+    )
+    env.render()
+
+    colors = np.array([
+        'red',
+        'green',
+        'blue',
+        'black',
+        'purple',
+    ])
+
+    obs = [
+        (-2., -2.),
+        (-2., 4.),
+        (4., -2.),
+        (4., 4.),
+        (-6., -6.),
+    ]
+
+    for ob, color in zip(obs, colors):
+        env._wrapped_env._robot_marker(
+            env._wrapped_env._main_ax,
+            ob[0],
+            ob[1],
+            color=color,
+            zoom=0.03
+        )

@@ -4,7 +4,7 @@ from gym.spaces.box import Box
 
 def get_env_and_params(env_name):
     if env_name.lower() == 'navigation2d':
-        from robolearn_gym_envs.simple_envs import Navigation2dEnv
+        from robolearn_envs.simple_envs import Navigation2dEnv
         env_params = dict(
             goal_reward=0,
             actuation_cost_coeff=5.0e+0,
@@ -27,7 +27,7 @@ def get_env_and_params(env_name):
         )
         env_fcn = Navigation2dEnv
     elif env_name.lower() == 'reacher':
-        from robolearn_gym_envs.pybullet import Reacher2D3DofGoalCompoEnv
+        from robolearn_envs.pybullet import Reacher2D3DofGoalCompoEnv
         env_params = dict(
             is_render=False,
             # obs_distances=False,
@@ -59,7 +59,7 @@ def get_env_and_params(env_name):
         )
         env_fcn = Reacher2D3DofGoalCompoEnv
     elif env_name.lower() == 'pusher':
-        from robolearn_gym_envs.pybullet import Pusher2D3DofGoalCompoEnv
+        from robolearn_envs.pybullet import Pusher2D3DofGoalCompoEnv
 
         env_params = dict(
             is_render=False,
@@ -77,7 +77,8 @@ def get_env_and_params(env_name):
             tgt_cost_weight=0.5,
             # goal_cost_weight=1.5,
             goal_cost_weight=8,  # Desde 01-03 a las 4.30pm
-            ctrl_cost_weight=1.0e-5,
+            # ctrl_cost_weight=1.0e-5,  # Paper
+            ctrl_cost_weight=1.0e-3,  # Desde 05-03
             no_task_weight=1.0,
             goal_tolerance=0.01,
             # max_time=PATH_LENGTH*DT,
@@ -90,7 +91,7 @@ def get_env_and_params(env_name):
         )
         env_fcn = Pusher2D3DofGoalCompoEnv
     elif env_name.lower() == 'centauro':
-        from robolearn_gym_envs.pybullet import CentauroTrayEnv
+        from robolearn_envs.pybullet import CentauroTrayEnv
         env_params = dict(
             is_render=False,
             # obs_distances=False,

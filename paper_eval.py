@@ -20,7 +20,7 @@ max_iters = 300
 # seeds = [610, 1010, 910, 710]
 # seeds = [610, 810, 1010]
 # seeds = [710, 1010, 610]
-seeds = [1010, 610, 810]  # Pusher
+# seeds = [1010, 610, 810]  # Pusher
 # seeds = [1010, 610, 710]  # Centauro
 # seeds = [510, 610, 710, 810, 910, 1010]
 # seeds = [610, 710, 1010, 510]  # Reacher
@@ -31,12 +31,13 @@ seeds = [1010, 610, 810]  # Pusher
 # seeds = [810]
 # seeds = [910]
 # seeds = [1010]
+seeds = [2010]
 
 last_idx = -1
 # last_idx = -2
 # last_idx = -3
 #
-save_fig_name = osp.join('paper_plots', 'learning_' + env_name + 'X.pdf')
+save_fig_name = osp.join('paper_plots', 'learning_' + env_name + 'Z.pdf')
 
 
 log_dict = dict()

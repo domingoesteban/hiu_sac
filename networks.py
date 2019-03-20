@@ -8,9 +8,9 @@ LOG_SIG_MIN = -6.907755  # SIGMA 0.001
 EPS = 1e-8
 
 
-class NNModule(torch.nn.Module):
+class MLP(torch.nn.Module):
     """
-    NN Module for modeling Q-values and activation weights
+    Multilayer Perceptron for modeling Q-values and activation weights.
     """
     def __init__(self,
                  input_size,
@@ -20,7 +20,15 @@ class NNModule(torch.nn.Module):
                  final_non_linear,
                  batch_norm=False,
                  ):
-        super(NNModule, self).__init__()
+        """
+        :param input_size: Size of input layer.
+        :param hidden_sizes:
+        :param output_size:
+        :param non_linear:
+        :param final_non_linear:
+        :param batch_norm:
+        """
+        super(MLP, self).__init__()
         self.batch_norm = batch_norm
         self.non_linear_name = non_linear
         self.output_non_linear_name = final_non_linear
@@ -196,7 +204,7 @@ class MultiValueNet(torch.nn.Module):
         # Value NN modules
         self.value_nets = list()
         for ii in range(num_intentions):
-            critic_net = NNModule(
+            critic_net = MLP(
                 input_size=i_size,
                 hidden_sizes=intention_sizes,
                 output_size=1,
@@ -390,7 +398,7 @@ class MultiPolicyNet(torch.nn.Module):
             self.add_module('unintention{}'.format(ii), policy_net)
 
         # Activation vector module
-        self.weights_net = NNModule(
+        self.weights_net = MLP(
             input_size=i_size,
             hidden_sizes=unintention_sizes,
             output_size=num_intentions*self.action_dim,  # Activation vectors

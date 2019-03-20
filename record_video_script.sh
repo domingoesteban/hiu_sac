@@ -13,20 +13,29 @@
 log_dir='logs/pusher/sub0/pusher-sac/pusher-sac--s-810---2019_03_06_00_11_30'
 log_dir='logs/pusher/sub1/pusher-sac/pusher-sac--s-810---2019_03_06_02_45_49'
 
+
 #horizon=500
 horizon=300
 
+# Policy subtask
 #task=0
 #task=1
 task=-1
 
 #env_task=0
-env_task=1
-#env_task=-1
+#env_task=1
+env_task=-1
 
 #iterations=(0 25 50 75 100 125 150 175 200 225 250 275 -1)
 #iterations=(0 25 50 75 100 125 150 175 -1)
 iterations=(-1)
+
+
+# Replace log_dir, pol-subtask, and env-subtask with script arguments
+log_dir=${1-${log_dir}}
+task=${2-${task}}
+env_task=${3-${env_task}}
+
 
 for itr_idx in ${!iterations[@]}; do
     itr=${iterations[itr_idx]}

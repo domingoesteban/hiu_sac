@@ -100,7 +100,7 @@ def get_default_hiusac_hyperparams(env_name):
             net_size=128,
             use_q2=True,
             explicit_vf=False,
-            total_iterations=200,
+            total_iterations=500,
             # train_rollouts=2,
             train_steps=750,
             eval_rollouts=5,
@@ -120,7 +120,9 @@ def get_default_hiusac_hyperparams(env_name):
             auto_alpha=True,
             # auto_alpha=False,
             # i_tgt_entro=2.e-0,  # EN paper
-            i_tgt_entro=1.e-0,
+            i_tgt_entro=1.e-0,  # Nuevo - final en paper
+            # i_tgt_entro=5.e-1,  # Prueba 05/03   16:33
+            # i_tgt_entro=1.e-1,  # Prueba 05/03   16:30
             u_tgt_entros=None,
 
             norm_input_pol=False,
