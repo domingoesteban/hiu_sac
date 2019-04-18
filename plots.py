@@ -1,3 +1,4 @@
+import csv
 import sys
 import os
 import numpy as np
@@ -7,23 +8,19 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pandas as pd
 import traceback
-import plots
 
 
 def get_csv_data(csv_file, labels, space_separated=False):
     data, all_labels = get_csv_data_and_labels(csv_file,
                                                space_separated=space_separated)
-    # Uncommont to print the labels
-    print(csv_file)
-    for label in all_labels:
-        print(label)
-    print('***\n'*3)
+    # # Uncomment to print the labels
+    # print(csv_file)
+    # for label in all_labels:
+    #     print(label)
+    # print('***\n'*3)
     n_data = data.shape[0]
 
     new_data = np.zeros((len(labels), n_data))
-
-    # # Uncomment for debugging
-    # print(all_labels)
 
     for ll, name in enumerate(labels):
         if name in all_labels:
@@ -53,73 +50,31 @@ def get_csv_data_and_labels(csv_file, space_separated=False):
         print("Error reading %s" % csv_file)
         sys.exit(1)
 
-    data = series.as_matrix()
+    data = series.values
     labels = list(series)
 
     return data, labels
 
 
-def set_latex_plot():
-    matplotlib.rcParams['pdf.fonttype'] = 42
-    matplotlib.rcParams['ps.fonttype'] = 42
-    # rc('font', **{'family': 'serif','serif':['Times']})
-    matplotlib.rcParams['font.family'] = ['serif']
-    matplotlib.rcParams['font.serif'] = ['Times New Roman']
-
-
-def subplots(*args, **kwargs):
-    fig, axs = plt.subplots(*args, **kwargs)
-
-    if isinstance(axs, np.ndarray):
-        for aa in axs:
-            axis_format(aa)
-    else:
-        axis_format(axs)
-
-    return fig, axs
-
-
-def fig_format(fig):
-    fig.subplots_adjust(hspace=0)
-    fig.set_facecolor((1, 1, 1))
-
-
-def axis_format(axis):
-    # axis.tick_params(axis='x', labelsize=25)
-    # axis.tick_params(axis='y', labelsize=25)
-    axis.tick_params(axis='x', labelsize=15)
-    axis.tick_params(axis='y', labelsize=15)
-
-    # Background
-    axis.xaxis.set_major_locator(MaxNLocator(integer=True))
-    axis.xaxis.grid(color='white', linewidth=2)
-    axis.set_facecolor((0.917, 0.917, 0.949))
-
-
-def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
-    labels_to_plot = ['Test Returns Mean']
+def plot_intentions_eval_returns(csv_file, block=False, num_intentions=None):
 
     if num_intentions is None:
         num_intentions = 0
     # else:
     #     num_intentions += 1
 
+    labels = list()
     # Add Intentional-Unintentional Label
-    new_labels = list()
-    for label in labels_to_plot:
-        for uu in range(num_intentions):
-            new_string = label + (' [%02d]' % uu)
-            new_labels.append(new_string)
+    label = 'Test Returns Mean'
+    for uu in range(num_intentions):
+        new_string = label + (' [%02d]' % uu)
+        labels.append(new_string)
+    # Assuming the Main does not have a prefix
+    labels.append(label)
 
-        # Assuming the Main does not have a prefix
-        new_string = label
-        new_labels.append(new_string)
+    data = get_csv_data(csv_file, labels)
 
-    n_subplots = len(labels_to_plot) * (num_intentions + 1)
-
-    data = get_csv_data(csv_file, new_labels)
-
-    fig, axs = subplots(n_subplots)
+    fig, axs = subplots(num_intentions + 1)
     if not isinstance(axs, np.ndarray):
         axs = np.array([axs])
     fig.subplots_adjust(hspace=0)
@@ -127,7 +82,7 @@ def plot_intentions_eval_returns(csv_file, num_intentions=None, block=False):
 
     for aa, ax in enumerate(axs):
         ax.plot(data[aa])
-        ax.set_ylabel(new_labels[aa])
+        ax.set_ylabel(labels[aa])
         plt.setp(ax.get_xticklabels(), visible=False)
 
     axs[-1].set_xlabel('Episodes')
@@ -143,47 +98,57 @@ def plot_intentions_info(csv_file, num_intentions=None, block=False):
         'Entropy',
     ]
 
-    adim=3
+    adim = get_max_action_idx(csv_file, "Mean Action ") + 1
+
     for ii in range(adim):
         infos_to_plot.append('Std Action %02d' % ii)
     # for ii in range(adim):
     #     infos_to_plot.append('Mean Action %02d' % ii)
 
+    for info in infos_to_plot:
+        plot_intention_info(csv_file, info, plot_label=None, per_action=False,
+                            num_intentions=num_intentions, block=block)
+
+
+def plot_intention_info(csv_file, csv_label, plot_label=None, per_action=False,
+                        num_intentions=None, block=False):
     if num_intentions is None:
         num_intentions = 0
-    # else:
-    #     num_intentions += 1
 
-    for label in infos_to_plot:
-        # Add Intentional-Unintentional Label
-        new_labels = list()
-        for uu in range(num_intentions):
-            new_string = label + (' [U-%02d]' % uu)
-            new_labels.append(new_string)
+    if plot_label is None:
+        plot_label = csv_label
 
-        # Assuming the Main does not have a prefix
-        new_string = label
-        new_labels.append(new_string)
+    # Add Intentional-Unintentional Label
+    csv_labels = []
+    plot_labels = []
+    for uu in range(num_intentions):
+        csv_labels.append(csv_label + (' [U-%02d]' % uu))
+        plot_labels.append(plot_label + (' [U-%02d]' % uu))
+    # Assuming the Main does not have a prefix
+    csv_labels.append(csv_label)
+    plot_labels.append(plot_label)
 
-        n_subplots = (num_intentions + 1)
+    data = get_csv_data(csv_file, csv_labels)
 
-        data = get_csv_data(csv_file, new_labels)
+    if per_action:
+        subplots_shape = (num_intentions + 1)
+    else:
+        subplots_shape = (num_intentions + 1)
 
-        fig, axs = subplots(n_subplots)
-        if not isinstance(axs, np.ndarray):
-            axs = np.array([axs])
-        fig.subplots_adjust(hspace=0)
-        fig.suptitle(label, fontweight='bold')
+    fig, axs = subplots(subplots_shape)
+    if not isinstance(axs, np.ndarray):
+        axs = np.array([axs])
+    fig.subplots_adjust(hspace=0)
+    fig.suptitle(csv_label, fontweight='bold')
 
-        for aa, ax in enumerate(axs):
-            ax.plot(data[aa])
-            ax.set_ylabel(new_labels[aa])
-            plt.setp(ax.get_xticklabels(), visible=False)
+    for aa, ax in enumerate(axs):
+        ax.plot(data[aa])
+        ax.set_ylabel(plot_labels[aa])
+        plt.setp(ax.get_xticklabels(), visible=False)
 
-        axs[-1].set_xlabel('Episodes')
-        plt.setp(axs[-1].get_xticklabels(), visible=True)
+    axs[-1].set_xlabel('Episodes')
+    plt.setp(axs[-1].get_xticklabels(), visible=True)
 
-    print('total_iters:', len(data[-1]))
     plt.show(block=block)
 
 
@@ -232,15 +197,14 @@ def plot_q_values(qf, action_lower, action_higher, obs, policy=None,
 
     all_axs = np.atleast_1d(all_axs)
 
-
-    all_obs = torch.tensor(obs, dtype=torch.float32, device=device)
+    all_obs = torch.tensor(obs, device=device)
     all_obs = all_obs.expand_as(all_acts)
 
     q_vals = qf(all_obs, all_acts).squeeze(-1).detach()
 
     if policy is not None:
         n_samples = 100
-        torch_obs = torch.tensor(obs, dtype=torch.float32, device=device)
+        torch_obs = torch.tensor(obs, device=device)
         torch_obs = torch_obs.expand(n_samples, -1)
         actions, pol_info = policy(torch_obs,
                                    deterministic=False,
@@ -505,8 +469,8 @@ def plot_multiple_intentions_eval_returns(
 
 
 def plot_navitation2d():
-    from envs import get_normalized_env
-    env, env_params = get_normalized_env(
+    from paper_environments import get_env
+    env, env_params = get_env(
         'navigation2d',
         None,
         610,
@@ -531,10 +495,67 @@ def plot_navitation2d():
     ]
 
     for ob, color in zip(obs, colors):
-        env._wrapped_env._robot_marker(
-            env._wrapped_env._main_ax,
+        env.draw_robot_marker(
+            env._main_ax,
             ob[0],
             ob[1],
             color=color,
             zoom=0.03
         )
+
+
+def get_headers(csv_file):
+    with open(csv_file, 'r') as f:
+        d_reader = csv.DictReader(f)
+
+        # get fieldnames from DictReader object and store in list
+        headers = d_reader.fieldnames
+
+    return headers
+
+
+def get_max_action_idx(csv_file, header_label=None):
+    if header_label is None:
+        header_label = 'Mean Action '
+
+    max_value = max([int((header.split(header_label, 1)[1]).split(' [')[0])
+                     for header in get_headers(csv_file)
+                     if header.startswith(header_label)])
+    return max_value
+
+
+def set_latex_plot():
+    matplotlib.rcParams['pdf.fonttype'] = 42
+    matplotlib.rcParams['ps.fonttype'] = 42
+    # rc('font', **{'family': 'serif','serif':['Times']})
+    matplotlib.rcParams['font.family'] = ['serif']
+    matplotlib.rcParams['font.serif'] = ['Times New Roman']
+
+
+def subplots(*args, **kwargs):
+    fig, axs = plt.subplots(*args, **kwargs)
+
+    if isinstance(axs, np.ndarray):
+        for aa in axs:
+            axis_format(aa)
+    else:
+        axis_format(axs)
+
+    return fig, axs
+
+
+def fig_format(fig):
+    fig.subplots_adjust(hspace=0)
+    fig.set_facecolor((1, 1, 1))
+
+
+def axis_format(axis):
+    # axis.tick_params(axis='x', labelsize=25)
+    # axis.tick_params(axis='y', labelsize=25)
+    axis.tick_params(axis='x', labelsize=15)
+    axis.tick_params(axis='y', labelsize=15)
+
+    # Background
+    axis.xaxis.set_major_locator(MaxNLocator(integer=True))
+    axis.xaxis.grid(color='white', linewidth=2)
+    axis.set_facecolor((0.917, 0.917, 0.949))

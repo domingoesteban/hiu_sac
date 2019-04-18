@@ -1,8 +1,8 @@
 """
-This file is basically rlkit's logger, with little modifications.
+This file is basically rllab/rlkit logger, with little changes.
 
-https://github.com/vitchyr/rlkit
 https://github.com/rll/rllab
+https://github.com/vitchyr/rlkit
 """
 from enum import Enum
 from contextlib import contextmanager
@@ -16,11 +16,9 @@ import csv
 import joblib
 import json
 import errno
+import torch
 
 from .tabulate import tabulate
-
-
-LOCAL_LOG_DIR = './logs'
 
 
 def mkdir_p(path):
@@ -48,7 +46,8 @@ _text_fds = {}
 _tabular_fds = {}
 _tabular_header_written = set()
 
-_snapshot_dir = None
+# _snapshot_dir = None
+_snapshot_dir = os.path.join('.', 'training_logs')
 _snapshot_mode = 'all'
 _snapshot_gap = 1
 
@@ -142,6 +141,17 @@ def get_log_stdout():
 
 
 def log(s, with_prefix=True, with_timestamp=True):
+    """
+
+    Args:
+        s (str): String to log in file descriptors and optionally stdout.
+        with_prefix (bool): Add a prefix to the log.
+        with_timestamp (bool): Add a timestamp before the string.
+
+    Returns:
+
+    """
+
     out = s
     if with_prefix:
         out = _prefix_str + out
@@ -152,7 +162,7 @@ def log(s, with_prefix=True, with_timestamp=True):
     if not _log_tabular_only:
         if _log_stdout:
             # Also log to stdout
-            print(out)
+            sys.stdout.write(out + '\n')
         for fd in list(_text_fds.values()):
             fd.write(out + '\n')
             fd.flush()
@@ -179,7 +189,9 @@ def save_extra_data(data):
     """
     Data saved here will always override the last entry
 
-    :param data: Something pickle'able.
+    Returns:
+        None
+
     """
     if _snapshot_dir:
         file_name = osp.join(_snapshot_dir, 'extra_data.pkl')
@@ -187,10 +199,22 @@ def save_extra_data(data):
 
 
 def get_table_dict():
+    """Returns a dictionary from the current table.
+
+    Returns:
+        dict:
+
+    """
     return dict(_tabular)
 
 
 def get_table_key_set():
+    """Returns a set from the current table.
+
+    Returns:
+        set:
+
+    """
     return set(key for key, value in _tabular)
 
 
@@ -244,6 +268,7 @@ def dump_tabular(*args, **kwargs):
             for line in tabulate(_tabular).split('\n'):
                 log(line, *args, **kwargs)
         tabular_dict = dict(_tabular)
+
         # Also write to the csv files
         # This assumes that the keys in each iteration won't change!
         for tabular_fd in list(_tabular_fds.values()):
@@ -288,6 +313,75 @@ def save_itr_params(itr, params):
             raise NotImplementedError
 
 
+def save_torch_models(num_iter, models_dict, replaceable_models_dict=None):
+    """Save things with pytorch.save
+
+    Returns:
+
+    """
+    save_full_path = os.path.join(
+        _snapshot_dir,
+        'models'
+    )
+
+    if _snapshot_mode == 'all':
+        models_dirs = list((
+            os.path.join(
+                save_full_path,
+                str('itr_%03d' % num_iter)
+            ),
+        ))
+    elif _snapshot_mode == 'last':
+        models_dirs = list((
+            os.path.join(
+                save_full_path,
+                str('last_itr')
+            ),
+        ))
+    elif _snapshot_mode == 'gap':
+        if num_iter % _snapshot_gap == 0:
+            models_dirs = list((
+                os.path.join(
+                    save_full_path,
+                    str('itr_%03d' % num_iter)
+                ),
+            ))
+        else:
+            return
+    elif _snapshot_mode == 'gap_and_last':
+        models_dirs = list((
+            os.path.join(
+                save_full_path,
+                str('last_itr')
+            ),
+        ))
+        if num_iter % _snapshot_gap == 0:
+            models_dirs.append(
+                os.path.join(
+                    save_full_path,
+                    str('itr_%03d' % num_iter)
+                ),
+            )
+    elif _snapshot_mode == 'none':
+        return
+    else:
+        raise NotImplementedError
+
+    for save_path in models_dirs:
+        # logger.log('Saving models to %s' % save_full_path)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        for key, value in models_dict.items():
+            torch.save(value, os.path.join(save_path, key + '.pt'))
+
+    if replaceable_models_dict:
+        if num_iter % _snapshot_gap == 0:  # TODO: See how to do at the end of episode
+            if not os.path.exists(save_full_path):
+                os.makedirs(save_full_path)
+            for key, value in models_dict.items():
+                torch.save(value, os.path.join(save_full_path, key + '.pt'))
+
+
 class MyEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, type):
@@ -325,71 +419,15 @@ def record_tabular_misc_stat(key, values, placement='back'):
         record_tabular(prefix + "Max" + suffix, np.nan)
 
 
-def create_exp_name(exp_prefix, seed=0):
-    """
-    Create a semi-unique experiment name that has a timestamp
-    :param exp_prefix:
-    :param exp_id:
-    :return:
-    """
-    now = datetime.datetime.now(dateutil.tz.tzlocal())
-    timestamp = now.strftime('%Y_%m_%d_%H_%M_%S')
-    return "%s--s-%d---%s" % (exp_prefix, seed, timestamp)
-
-
-def create_log_dir(exp_prefix, seed=0, base_log_dir=None):
-    """
-    Creates and returns a unique log directory.
-
-    :param exp_prefix: All experiments with this prefix will have log
-    directories be under this directory.
-    :param exp_id: Different exp_ids will be in different directories.
-    :return:
-    """
-    exp_name = create_exp_name(exp_prefix, seed=seed)
-    if base_log_dir is None:
-        base_log_dir = LOCAL_LOG_DIR
-    log_dir = osp.join(base_log_dir, exp_prefix.replace("_", "-"), exp_name)
-    if osp.exists(log_dir):
-        print("WARNING: Log directory already exists {}".format(log_dir))
-    os.makedirs(log_dir, exist_ok=True)
-    return log_dir
-
-
-def setup_logger(
-        exp_prefix="default",
-        seed=0,
-        variant=None,
-        log_dir=None,
-        variant_log_file="variant.json",
-        tabular_log_file="progress.csv",
-        snapshot_mode="last",
-        snapshot_gap=1,
-):
-    if log_dir is None:
-        log_dir = LOCAL_LOG_DIR
-    log_dir = create_log_dir(exp_prefix, seed=seed, base_log_dir=log_dir)
-    if variant is not None:
-        log("Variant:")
-        log(json.dumps(dict_to_safe_json(variant), indent=2))
-        variant_log_path = osp.join(log_dir, variant_log_file)
-        log_variant(variant_log_path, variant)
-
-    tabular_log_path = osp.join(log_dir, tabular_log_file)
-    add_tabular_output(tabular_log_path)
-
-    set_snapshot_dir(log_dir)
-    set_snapshot_mode(snapshot_mode)
-    set_snapshot_gap(snapshot_gap)
-
-    return log_dir
-
-
 def dict_to_safe_json(d):
-    """
-    Convert each value in the dictionary into a JSON'able primitive.
-    :param d:
-    :return:
+    """Convert each value in the dictionary into a JSON'able primitive.
+
+    Args:
+        d (dict): requested dictionary
+
+    Returns:
+        dict: New dictionary.
+
     """
     new_d = {}
     for key, item in d.items():
@@ -411,6 +449,6 @@ def safe_json(data):
     elif isinstance(data, (tuple, list)):
         return all(safe_json(x) for x in data)
     elif isinstance(data, dict):
-        return all(isinstance(k, str) and safe_json(v) for k, v in data.items())
+        return all(
+            isinstance(k, str) and safe_json(v) for k, v in data.items())
     return False
-

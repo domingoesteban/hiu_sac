@@ -1,8 +1,53 @@
-import numpy as np
-from gym.spaces.box import Box
+# This python module provides the environments used in the paper.
+
+
+def get_env(env_name, subtask=None, seed=610, render=False,
+            new_env_params=None):
+    """Get Robolearn environment with some specific parameters.
+
+    Args:
+        env_name (str): Environment name
+        subtask (int or None): Environment subtask index. None: Compound task
+        seed (int): Seed value
+        render (bool): Run environment with GUI.
+        new_env_params (dict): Dictionary of new environment parameters.
+
+    Returns:
+        Env: Environment object
+        dict: Environment parameters used in the environment object.
+
+    """
+    # Get environment function and default values
+    env_fcn, env_params = get_env_and_params(env_name)
+
+    # Update environment parameters.
+    if new_env_params is not None:
+        env_params.update(new_env_params)
+    else:
+        env_params['subtask'] = subtask
+    env_params['seed'] = seed
+    if not env_name.lower() == 'navigation2d':
+        env_params['is_render'] = render
+
+    return env_fcn(**env_params), env_params
 
 
 def get_env_and_params(env_name):
+    """Get environment function and default parameters.
+
+    Args:
+        env_name (str): Environment's name.
+            Available options:
+            - navigation2d
+            - reacher
+            - pusher
+            - centauro
+
+    Returns:
+        environment function
+        dict: Environment default parameters.
+
+    """
     if env_name.lower() == 'navigation2d':
         from robolearn_envs.simple_envs import Navigation2dEnv
         env_params = dict(
@@ -27,14 +72,13 @@ def get_env_and_params(env_name):
         )
         env_fcn = Navigation2dEnv
     elif env_name.lower() == 'reacher':
-        from robolearn_envs.pybullet import Reacher2D3DofGoalCompoEnv
+        from robolearn_envs.pybullet import Reacher2DGoalCompoEnv
         env_params = dict(
             is_render=False,
             # obs_distances=False,
             obs_distances=True,
-            obs_with_img=False,
-            # obs_with_ori=True,
-            obs_with_ori=False,
+            only_position=True,
+            # only_position=False,
             obs_with_goal=True,
             # obs_with_goal=False,
             # goal_pose=(0.65, 0.65),
@@ -57,17 +101,16 @@ def get_env_and_params(env_name):
             subtask=None,
             seed=610,
         )
-        env_fcn = Reacher2D3DofGoalCompoEnv
+        env_fcn = Reacher2DGoalCompoEnv
     elif env_name.lower() == 'pusher':
-        from robolearn_envs.pybullet import Pusher2D3DofGoalCompoEnv
+        from robolearn_envs.pybullet import Pusher2DGoalCompoEnv
 
         env_params = dict(
             is_render=False,
             # obs_distances=False,
             obs_distances=True,
-            obs_with_img=False,
-            # obs_with_ori=True,
-            obs_with_ori=False,
+            only_position=True,
+            # only_position=False,
             goal_pose=(0.65, 0.65),
             rdn_goal_pose=True,
             tgt_pose=(0.5, 0.25, 1.4660),
@@ -77,27 +120,25 @@ def get_env_and_params(env_name):
             tgt_cost_weight=0.5,
             # goal_cost_weight=1.5,
             goal_cost_weight=8,  # Desde 01-03 a las 4.30pm
+            goal_tolerance=0.01,
             # ctrl_cost_weight=1.0e-5,  # Paper
             ctrl_cost_weight=1.0e-3,  # Desde 05-03
-            no_task_weight=1.0,
-            goal_tolerance=0.01,
             # max_time=PATH_LENGTH*DT,
             max_time=None,
             sim_timestep=1.e-3,
             # frame_skip=10,  # Antes de 26-02
             frame_skip=50,
+            half_env=True,
             subtask=None,
             seed=610,
         )
-        env_fcn = Pusher2D3DofGoalCompoEnv
+        env_fcn = Pusher2DGoalCompoEnv
     elif env_name.lower() == 'centauro':
         from robolearn_envs.pybullet import CentauroTrayEnv
         env_params = dict(
             is_render=False,
             # obs_distances=False,
             obs_distances=True,
-            obs_with_img=False,
-            # obs_with_ori=True,
             active_joints='RA',
             control_mode='joint_tasktorque',
             # _control_mode='torque',
@@ -126,96 +167,6 @@ def get_env_and_params(env_name):
         )
         env_fcn = CentauroTrayEnv
     else:
-        raise ValueError("Wrong environment name '%s'" % env_name)
+        raise ValueError("Wrong environment name '%s'!" % env_name)
 
     return env_fcn, env_params
-
-
-def get_normalized_env(env_name, subtask=None, seed=610, render=False,
-                       new_env_params=None):
-    env_fcn, env_params = get_env_and_params(env_name)
-    if new_env_params is not None:
-        env_params.update(new_env_params)
-    else:
-        env_params['subtask'] = subtask
-    env_params['seed'] = seed
-    if not env_name.lower() == 'navigation2d':
-        env_params['is_render'] = render
-
-    return NormalizedEnv(env_fcn(**env_params)), env_params
-
-
-class NormalizedEnv:
-    def __init__(
-            self,
-            env,
-    ):
-        """
-        Normalize action to in [-1, 1].
-        :param env:
-        """
-        self._wrapped_env = env
-
-        self._is_action_box = isinstance(self._wrapped_env.action_space, Box)
-
-        # Action Space
-        if isinstance(self._wrapped_env.action_space, Box):
-            ub = np.ones(self._wrapped_env.action_space.shape)
-            self.action_space = Box(-1 * ub, ub, dtype=np.float32)
-        else:
-            self.action_space = self._wrapped_env.action_space
-
-    def reset(self, *args, **kwargs):
-        obs = self._wrapped_env.reset(*args, **kwargs)
-
-        return obs
-
-    def step(self, action):
-        if self._is_action_box:
-            # Scale Action
-            lb = self._wrapped_env.action_space.low
-            ub = self._wrapped_env.action_space.high
-            scaled_action = lb + (action + 1.) * 0.5 * (ub - lb)
-            scaled_action = np.clip(scaled_action, lb, ub)
-        else:
-            scaled_action = action
-
-        # Interact with Environment
-        wrapped_step = self._wrapped_env.step(scaled_action)
-        next_obs, reward, done, info = wrapped_step
-
-        return next_obs, reward, done, info
-
-    def seed(self, *args, **kwargs):
-        return self._wrapped_env.seed(*args, **kwargs)
-
-    def render(self, *args, **kwargs):
-        return self._wrapped_env.render(*args, **kwargs)
-
-    @property
-    def n_subgoals(self):
-        return self._wrapped_env.n_subgoals
-
-    @property
-    def obs_dim(self):
-        return self._wrapped_env.obs_dim
-
-    @property
-    def action_dim(self):
-        return self._wrapped_env.action_dim
-
-    @property
-    def name(self):
-        return type(self._wrapped_env).__name__
-
-    def set_subtask(self, subtask):
-        return self._wrapped_env.set_subtask(subtask)
-
-    def get_subtask(self):
-        return self._wrapped_env.get_subtask()
-
-    def stop_recording_video(self):
-        return self._wrapped_env.stop_recording_video()
-
-    def start_recording_video(self, file_name=None):
-        return self._wrapped_env.start_recording_video(file_name=file_name)

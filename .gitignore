@@ -1,5 +1,7 @@
 __pycache__
 .idea
 logs
+training_logs
 pascal_logs
 videos
+expected_accum_rewards.png

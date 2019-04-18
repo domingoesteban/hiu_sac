@@ -4,3 +4,5 @@ matplotlib
 joblib
 gtimer
 pandas
+tqdm
+git+git://github.com/domingoesteban/robolearn_envs@master#egg=robolearn_envs

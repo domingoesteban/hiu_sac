@@ -1,6 +1,8 @@
+# This python module provides the parameterized policy and value functions.
+
 import torch
 import math
-from functools import reduce
+import numpy as np
 
 LOG_SIG_MAX = 2
 # LOG_SIG_MIN = -20
@@ -9,9 +11,6 @@ EPS = 1e-8
 
 
 class MLP(torch.nn.Module):
-    """
-    Multilayer Perceptron for modeling Q-values and activation weights.
-    """
     def __init__(self,
                  input_size,
                  hidden_sizes,
@@ -20,42 +19,54 @@ class MLP(torch.nn.Module):
                  final_non_linear,
                  batch_norm=False,
                  ):
-        """
-        :param input_size: Size of input layer.
-        :param hidden_sizes:
-        :param output_size:
-        :param non_linear:
-        :param final_non_linear:
-        :param batch_norm:
+        """Multilayer perceptron for modeling Q-values and activation weights.
+
+        Args:
+            input_size (int): Size of input layer.
+            hidden_sizes (list or tuple of int): Sizes of hidden layers.
+            output_size (int): Size of output layer.
+            non_linear (str): Non-linear function in hidden layers.
+            final_non_linear (str): (Non)-linear function in output layer.
+            batch_norm (bool): Batch normalization in hidden layers.
         """
         super(MLP, self).__init__()
         self.batch_norm = batch_norm
         self.non_linear_name = non_linear
         self.output_non_linear_name = final_non_linear
 
-        self.non_linear = get_non_linear_op(self.non_linear_name)
-        self.output_non_linear = get_non_linear_op(self.output_non_linear_name)
-
-        # Network
-        self.layers = list()
-        self.layer_norms = list()
+        # Network Layers
+        self.hlayers = list()
+        self.hlayer_norms = list()
         i_size = input_size
         for ll, o_size in enumerate(hidden_sizes):
             layer = torch.nn.Linear(i_size, o_size)
-            self.layers.append(layer)
+            self.hlayers.append(layer)
             self.__setattr__("layer{}".format(ll), layer)
             if self.batch_norm:
                 bn = torch.nn.BatchNorm1d(o_size)
-                self.layer_norms.append(bn)
+                self.hlayer_norms.append(bn)
                 self.__setattr__("layer{}_norm".format(ll), bn)
             i_size = o_size
 
         self.olayer = torch.nn.Linear(i_size, output_size)
 
-        # Initialize weights
+        # Network non-linear (activation) functions
+        self.non_linear = get_non_linear_op(self.non_linear_name)
+        self.output_non_linear = get_non_linear_op(self.output_non_linear_name)
+
+        # Weight initialization
         self.init_weights('uniform')
 
     def init_weights(self, init_fcn='uniform'):
+        """Initialize weights with 'Xavier' initialization and bias with zeros.
+
+        Args:
+            init_fcn (str): 'uniform' or 'normal' Xavier initialization.
+
+        Returns:
+            None
+
+        """
         if init_fcn.lower() == 'uniform':
             init_fcn = torch.nn.init.xavier_uniform_
         else:
@@ -66,7 +77,7 @@ class MLP(torch.nn.Module):
         if init_gain_name == 'elu':
             init_gain_name = 'relu'
         init_gain = torch.nn.init.calculate_gain(init_gain_name)
-        for layer in self.layers:
+        for layer in self.hlayers:
             init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
@@ -79,18 +90,24 @@ class MLP(torch.nn.Module):
         torch.nn.init.constant_(self.olayer.bias.data, 0)
 
     def forward(self, x):
-        for ll in range(len(self.layers)):
-            x = self.non_linear(self.layers[ll](x))
+        """MLP computation
+        math:`output = mlp(x)`
+        Args:
+            x (torch.Tensor): MLP input
+
+        Returns:
+            torch.Tensor: MLP output
+
+        """
+        for ll in range(len(self.hlayers)):
+            x = self.non_linear(self.hlayers[ll](x))
             if self.batch_norm:
-                x = self.layer_norms[ll](x)
+                x = self.hlayer_norms[ll](x)
         x = self.output_non_linear(self.olayer(x))
         return x
 
 
-class ComposablePolicy(torch.nn.Module):
-    """
-    Composable Gaussian Policy Module
-    """
+class ComposablePolicyNet(torch.nn.Module):
     def __init__(self,
                  input_size,
                  hidden_sizes,
@@ -99,25 +116,32 @@ class ComposablePolicy(torch.nn.Module):
                  final_non_linear,
                  batch_norm=False,
                  ):
-        super(ComposablePolicy, self).__init__()
+        """Composable Gaussian Policy
+
+        Args:
+            input_size (int): Size of input layer.
+            hidden_sizes (list or tuple of int): Sizes of hidden layers.
+            output_size (int): Size of output layer.
+            non_linear (str): Non-linear function in hidden layers.
+            final_non_linear (str): (Non)-linear function in output layer.
+            batch_norm (bool): Batch normalization in hidden layers.
+        """
+        super(ComposablePolicyNet, self).__init__()
         self.batch_norm = batch_norm
         self.non_linear_name = non_linear
         self.output_non_linear_name = final_non_linear
 
-        self.non_linear = get_non_linear_op(self.non_linear_name)
-        self.output_non_linear = get_non_linear_op(self.output_non_linear_name)
-
-        # Network
-        self.layers = list()
-        self.layer_norms = list()
+        # Network Hidden Layers
+        self.hlayers = list()
+        self.hlayer_norms = list()
         i_size = input_size
         for ll, o_size in enumerate(hidden_sizes):
             layer = torch.nn.Linear(i_size, o_size)
-            self.layers.append(layer)
+            self.hlayers.append(layer)
             self.__setattr__("layer{}".format(ll), layer)
             if self.batch_norm:
                 bn = torch.nn.BatchNorm1d(o_size)
-                self.layer_norms.append(bn)
+                self.hlayer_norms.append(bn)
                 self.__setattr__("layer{}_norm".format(ll), bn)
             i_size = o_size
 
@@ -125,10 +149,23 @@ class ComposablePolicy(torch.nn.Module):
         self.mean_layer = torch.nn.Linear(i_size, output_size)
         self.log_std_layer = torch.nn.Linear(i_size, output_size)
 
-        # Initialize weights
+        # Network non-linear (activation) functions
+        self.non_linear = get_non_linear_op(self.non_linear_name)
+        self.output_non_linear = get_non_linear_op(self.output_non_linear_name)
+
+        # Weight initialization
         self.init_weights('uniform')
 
     def init_weights(self, init_fcn='uniform'):
+        """Initialize weights with 'Xavier' initialization and bias with zeros.
+
+        Args:
+            init_fcn (str): 'uniform' or 'normal' Xavier initialization.
+
+        Returns:
+            None
+
+        """
         if init_fcn.lower() == 'uniform':
             init_fcn = torch.nn.init.xavier_uniform_
         else:
@@ -139,11 +176,11 @@ class ComposablePolicy(torch.nn.Module):
         if init_gain_name == 'elu':
             init_gain_name = 'relu'
         init_gain = torch.nn.init.calculate_gain(init_gain_name)
-        for layer in self.layers:
+        for layer in self.hlayers:
             init_fcn(layer.weight.data, gain=init_gain)
             torch.nn.init.constant_(layer.bias.data, 0)
 
-        # Initialize mean and log_std layer
+        # Initialize output (mean and log_std) layers.
         init_gain_name = self.output_non_linear_name
         if init_gain_name == 'elu':
             init_gain_name = 'relu'
@@ -154,10 +191,19 @@ class ComposablePolicy(torch.nn.Module):
         torch.nn.init.constant_(self.log_std_layer.bias.data, 0)
 
     def forward(self, x):
-        for ll in range(len(self.layers)):
-            x = self.non_linear(self.layers[ll](x))
+        """Computes the parameters of the composable policy
+        math:`mean, log_std = composable_policy(observation)`
+        Args:
+            x (torch.Tensor): Composable policy input
+
+        Returns:
+            torch.Tensor: MLP output
+
+        """
+        for ll in range(len(self.hlayers)):
+            x = self.non_linear(self.hlayers[ll](x))
             if self.batch_norm:
-                x = self.layer_norms[ll](x)
+                x = self.hlayer_norms[ll](x)
         mean = self.output_non_linear(self.mean_layer(x))
         log_std = self.output_non_linear(self.log_std_layer(x))
         return mean, log_std
@@ -177,7 +223,7 @@ class MultiValueNet(torch.nn.Module):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
-                 normalize_inputs=False,
+                 input_normalization=False,
                  ):
         super(MultiValueNet, self).__init__()
 
@@ -216,10 +262,13 @@ class MultiValueNet(torch.nn.Module):
             self.add_module('intention{}'.format(ii), critic_net)
 
         # (Optional) input normalization
-        if normalize_inputs:
+        if input_normalization:
             self.add_module('input_normalization', Normalizer(self.input_dim))
         else:
             self.input_normalization = None
+
+        # Weight initialization
+        self.init_weights('uniform')
 
     def init_weights(self, init_fcn='uniform'):
         if init_fcn.lower() == 'uniform':
@@ -261,8 +310,7 @@ class MultiValueNet(torch.nn.Module):
 
 
 class MultiQNet(MultiValueNet):
-    """
-    State-Action Value Function
+    """State-Action Value Function -- Q(s,a)
     """
     def __init__(self,
                  num_intentions,
@@ -275,7 +323,7 @@ class MultiQNet(MultiValueNet):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
-                 normalize_inputs=False,
+                 input_normalization=False,
                  ):
         self.input_dim = obs_dim + action_dim
         super(MultiQNet, self).__init__(
@@ -288,7 +336,7 @@ class MultiQNet(MultiValueNet):
             intention_non_linear=intention_non_linear,
             intention_final_non_linear=intention_final_non_linear,
             intention_batch_norm=intention_batch_norm,
-            normalize_inputs=normalize_inputs,
+            input_normalization=input_normalization,
         )
 
     def forward(self, observation, action, intention=None):
@@ -297,8 +345,7 @@ class MultiQNet(MultiValueNet):
 
 
 class MultiVNet(MultiValueNet):
-    """
-    State Value Function
+    """State Value Function -- V(s)
     """
     def __init__(self,
                  num_intentions,
@@ -310,7 +357,7 @@ class MultiVNet(MultiValueNet):
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
-                 normalize_inputs=False,
+                 input_normalization=False,
                  ):
         self.input_dim = obs_dim
         super(MultiVNet, self).__init__(
@@ -323,7 +370,7 @@ class MultiVNet(MultiValueNet):
             intention_non_linear=intention_non_linear,
             intention_final_non_linear=intention_final_non_linear,
             intention_batch_norm=intention_batch_norm,
-            normalize_inputs=normalize_inputs,
+            input_normalization=input_normalization,
         )
 
     def forward(self, observation, intention=None):
@@ -339,14 +386,14 @@ class MultiPolicyNet(torch.nn.Module):
                  obs_dim,
                  action_dim,
                  shared_sizes,
-                 unintention_sizes,
+                 intention_sizes,
                  shared_non_linear='relu',
                  shared_batch_norm=False,
                  intention_non_linear='relu',
                  intention_final_non_linear='linear',
                  intention_batch_norm=False,
                  combination_method='convex',
-                 normalize_inputs=False,
+                 input_normalization=False,
                  ):
         super(MultiPolicyNet, self).__init__()
 
@@ -380,15 +427,15 @@ class MultiPolicyNet(torch.nn.Module):
         for ii in range(num_intentions):
             # policy_net = NNModule(
             #     input_size=i_size,
-            #     hidden_sizes=unintention_sizes,
+            #     hidden_sizes=intention_sizes,
             #     output_size=action_dim*2,  # Output means and log_stds
             #     non_linear=intention_non_linear,
             #     final_non_linear=intention_final_non_linear,
             #     batch_norm=intention_batch_norm,
             # )
-            policy_net = ComposablePolicy(
+            policy_net = ComposablePolicyNet(
                 input_size=i_size,
-                hidden_sizes=unintention_sizes,
+                hidden_sizes=intention_sizes,
                 output_size=action_dim,
                 non_linear=intention_non_linear,
                 final_non_linear=intention_final_non_linear,
@@ -400,7 +447,7 @@ class MultiPolicyNet(torch.nn.Module):
         # Activation vector module
         self.weights_net = MLP(
             input_size=i_size,
-            hidden_sizes=unintention_sizes,
+            hidden_sizes=intention_sizes,
             output_size=num_intentions*self.action_dim,  # Activation vectors
             non_linear=intention_non_linear,
             final_non_linear=intention_final_non_linear,
@@ -416,15 +463,24 @@ class MultiPolicyNet(torch.nn.Module):
         else:
             self.combination_non_linear = get_non_linear_op('linear')
 
-        if normalize_inputs:
+        # (Optional) input normalization
+        if input_normalization:
             self.add_module('input_normalization', Normalizer(obs_dim))
         else:
             self.input_normalization = None
 
-        # Initialize weights
+        # Weight initialization
         self.init_weights('uniform')
 
     def init_weights(self, init_fcn='uniform'):
+        """Initialize the shared layers
+
+        Args:
+            init_fcn:
+
+        Returns:
+
+        """
         if init_fcn.lower() == 'uniform':
             init_fcn = torch.nn.init.xavier_uniform_
         else:
@@ -616,19 +672,20 @@ class MultiPolicyNet(torch.nn.Module):
 
         # print(activation_weights[0, :, :].mean(dim=1).detach().cpu().numpy())
 
-        pol_info = dict()
-        pol_info['u_actions'] = u_actions  # Batch x nIntent x dA
-        pol_info['u_log_probs'] = u_log_probs  # Batch x nIntent x 1
-        pol_info['i_log_prob'] = i_log_prob  # Batch x 1
-        pol_info['activation_weights'] = activation_weights # Batch x nInt x dA
-        pol_info['u_means'] = u_means  # Batch x nIntent x dA
-        pol_info['i_mean'] = i_mean  # Batch x dA
-        pol_info['u_log_stds'] = u_log_stds  # Batch x nIntent x dA
-        pol_info['i_log_std'] = i_log_std  # Batch x dA
-        pol_info['u_stds'] = u_stds  # Batch x nIntent x dA
-        pol_info['i_std'] = i_std  # Batch x dA
-        pol_info['u_variances'] = u_variances  # Batch x nIntent x dA
-        pol_info['i_variance'] = i_variance  # Batch x dA
+        pol_info = {}
+        if log_prob:
+            pol_info['u_actions'] = u_actions  # Batch x nIntent x dA
+            pol_info['u_log_probs'] = u_log_probs  # Batch x nIntent x 1
+            pol_info['i_log_prob'] = i_log_prob  # Batch x 1
+            pol_info['activation_weights'] = activation_weights # Batch x nInt x dA
+            pol_info['u_means'] = u_means  # Batch x nIntent x dA
+            pol_info['i_mean'] = i_mean  # Batch x dA
+            pol_info['u_log_stds'] = u_log_stds  # Batch x nIntent x dA
+            pol_info['i_log_std'] = i_log_std  # Batch x dA
+            pol_info['u_stds'] = u_stds  # Batch x nIntent x dA
+            pol_info['i_std'] = i_std  # Batch x dA
+            pol_info['u_variances'] = u_variances  # Batch x nIntent x dA
+            pol_info['i_variance'] = i_variance  # Batch x dA
 
         return i_action, pol_info
 
@@ -657,6 +714,16 @@ def get_non_linear_op(op_name, **kwargs):
 
 
 def clip_but_pass_gradient(x, l=-1., u=1.):
+    """
+    Clip value but allow gradient computation.
+    Args:
+        x (torch.Tensor): Value
+        l (torch.Tensor or float): Lower bound
+        u (torch.Tensor or float): Upper bound
+
+    Returns:
+
+    """
     clip_up = (x > u).to(dtype=torch.float32)
     clip_low = (x < l).to(dtype=torch.float32)
     return x + ((u - x)*clip_up + (l - x)*clip_low).detach()
@@ -734,161 +801,3 @@ class Normalizer(torch.nn.Module):
             )
         )
         self.synchronized = True
-
-
-if __name__ == '__main__':
-    torch.cuda.manual_seed(500)
-    torch.manual_seed(500)
-
-    obs_dim = 2
-    batch = 1
-
-    # device = 'cuda:0'
-    device = 'cpu'
-
-    normalizer = Normalizer(obs_dim)
-    normalizer.to(device)
-
-    for ii in range(500):
-        obs1 = torch.FloatTensor(batch, 1).uniform_(10, 50).to(device)
-        obs2 = torch.FloatTensor(batch, 1).uniform_(-3000, -1000).to(device)
-
-        cosa = torch.cat((obs1, obs2), dim=1)
-
-        print('prev_mean', cosa.mean(dim=0))
-        print('prev_std', cosa.std(dim=0))
-
-        cosa = normalizer(cosa)
-        print('after_mean', cosa.mean(dim=0))
-        print('after_norm.mean',  normalizer.mean)
-        print('after_std', cosa.std(dim=0))
-        print('after_norm.std',  normalizer.std)
-        print('--')
-
-    input('fasd')
-
-    # print('&&&\n'*2)
-    # print("Check Intention Network")
-    # intention = Intention(
-    #     input_size=6,
-    #     hidden_sizes=(5, 3, 4),
-    #     output_size=2,
-    #     non_linear='relu',
-    #     final_non_linear='linear',
-    #     batch_norm=False,
-    # )
-    # print('Architecture:\n', intention)
-    # input_tensor = torch.rand(6).unsqueeze(0)
-    # print('input', input_tensor)
-    # output = intention(input_tensor)
-    # print('output', output)
-
-    batch = 5
-    state_dim = 4
-    action_dim = 2
-    num_intentions = 1
-
-    # print('&&&\n'*2)
-    # print("Check Critic Network")
-    # critic = MultiQNet(
-    #     num_intentions=num_intentions,
-    #     obs_dim=state_dim,
-    #     action_dim=action_dim,
-    #     shared_sizes=(2, 4),
-    #     intention_sizes=(10, 15, 9),
-    #     shared_non_linear='relu',
-    #     shared_batch_norm=False,
-    #     intention_non_linear='relu',
-    #     intention_final_non_linear='linear',
-    #     intention_batch_norm=False,
-    # )
-    # print('Architecture:\n', critic)
-    # print('Named parameters:')
-    # for name, param in critic.named_parameters():
-    #     print(name, param.shape, param.is_cuda)
-    # print('^^^^')
-    # for name, module in critic.named_children():
-    #     print(name, module)
-    # state_tensor = torch.rand(batch, state_dim)
-    # action_tensor = torch.rand(batch, action_dim)
-    # print('input', state_tensor.shape, action_tensor.shape)
-    # output = critic(state_tensor, action_tensor)
-    # print('output', output, output.shape)
-    # print('one_output', output[:, 0].shape)
-
-    print('&&&\n'*2)
-    print("Check Policy Network")
-    policy = MultiPolicyNet(
-        num_intentions=num_intentions,
-        obs_dim=state_dim,
-        action_dim=action_dim,
-        shared_sizes=(5, 4),
-        unintention_sizes=(10, 15, 3),
-        shared_non_linear='relu',
-        shared_batch_norm=False,
-        intention_non_linear='relu',
-        intention_final_non_linear='linear',
-        intention_batch_norm=False,
-        normalize_inputs=True,
-    )
-    print('Architecture:\n', policy)
-    print('Named parameters:')
-    for name, param in policy.named_parameters():
-        print(name, param.shape, param.is_cuda)
-    print('^^^^')
-    for name, module in policy.named_children():
-        print(name, module)
-    state_tensor = torch.rand(batch, state_dim)
-    print('input', state_tensor.shape)
-    output, output_info = policy(state_tensor, log_prob=True)
-    print('output', output.shape)
-    print('one_output', output[:, 0].shape)
-
-    des_means = torch.randn(num_intentions, action_dim)
-    des_mean = torch.randn(action_dim)
-    min_std = 0.001
-    max_std = 5.2
-    des_std = (min_std - max_std) * torch.rand(action_dim) + max_std
-    des_stds = (min_std - max_std) * torch.rand(num_intentions, action_dim) + max_std
-
-    loss_fcn = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
-    errors = list()
-    for i in range(5000):
-        output, output_info = policy(state_tensor, log_prob=True)
-        error_mean = loss_fcn(output_info['mean'], des_mean.expand_as(output_info['mean']))
-        error_means = loss_fcn(output_info['means'], des_means.expand_as(output_info['means']))
-        error_std = loss_fcn(output_info['log_std'].exp(), des_std.expand_as(output_info['log_std']))
-        error_stds = loss_fcn(output_info['log_stds'].exp(), des_stds.expand_as(output_info['log_stds']))
-
-        total_error = error_mean + error_means + error_std + error_stds
-
-        optimizer.zero_grad()
-        total_error.backward()
-        optimizer.step()
-        print(total_error.item(), '', error_mean.item(), error_means.item(),
-              '', error_std.item(), error_stds.item())
-        errors.append(total_error.item())
-
-    import matplotlib.pyplot as plt
-    plt.plot(errors)
-    plt.show()
-
-    # optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)
-    #
-    # des_act = torch.ones_like(output[:, 1]) * -1.0
-    #
-    # for ii in range(1000):
-    #     output = policy(state_tensor, log_prob=False, deterministic=True)
-    #     error = torch.mean((des_act - output[:, 1]) ** 2)
-    #
-    #     optimizer.zero_grad()
-    #     error.backward()
-    #     # for name, param in policy.named_parameters():
-    #     #     if param.grad is None:
-    #     #         print(name, None)
-    #     #     else:
-    #     #         print(name, param.grad.max())
-    #     # input('fasdfsdf')
-    #     optimizer.step()
-    #     print(error.data)

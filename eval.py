@@ -5,7 +5,7 @@ import argparse
 import json
 
 
-from envs import get_normalized_env
+from paper_environments import get_env
 from utils import rollout
 import plots
 
@@ -16,30 +16,69 @@ VIDEOS_DIR = 'videos'
 # Numpy print options
 np.set_printoptions(precision=3, suppress=True)
 
+# # Script options
+# options_dict = dict(
+#     e="evaluate",
+#     ie="evaluate infinite times!",
+#     p="plot progress",
+#     v="plot qval",
+#     r="record interaction",
+#     re="record and exit",
+#     n="navigation2d",
+#     t="Change policy task",
+#     i="Change iteration",
+#     et="change env task",
+#     h="change evaluation horizon",
+#     q="exit this script",
+# )
+options_choices = [
+    ('e', 'evaluate', "Evaluate the policy"),
+    ('p', 'plot', "Plot the expected return from the learning process"),
+    ('pi', 'plot_info', "Plot relevant information from the learning process"),
+    ('er', 'eval_repeat', "Evaluate repeteadly the environment!"),
+]
+
 # Script parameters
-parser = argparse.ArgumentParser(description='Train Arguments')
-parser.add_argument('log_dir', type=str,
-                    help='Log directory')
-parser.add_argument('--seed', '-s', type=int, default=610,
-                    help='Seed value [default: 610]')
-parser.add_argument('--task', '-t', type=int, default=None,
-                    help='Task number [default: None (Main task)]')
-parser.add_argument('--env_task', '-e', type=int, default=None,
-                    help='Task number [default: None (Main task)]')
+parser = argparse.ArgumentParser(
+    description='Evaluate a policy from a log directory.',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
+exclusive_opts = parser.add_mutually_exclusive_group()
+for (short_opt, long_opt, description) in options_choices:
+    exclusive_opts.add_argument('-'+short_opt, '--'+long_opt, help=description,
+                                action='store_const', dest='script_option',
+                                const=short_opt)
+parser.add_argument('log_dir', type=str, help='Full path of the log directory')
+parser.add_argument('--seed', '-s', type=int, default=610, help='Seed value')
+parser.add_argument('--pol_task', '-pt', type=int, default=None,
+                    help="Policy task number. None is the Main Task")
+parser.add_argument('--env_task', '-et', type=int, default=None,
+                    help="Environment task number. None is the Main Task")
 parser.add_argument('--horizon', '-n', type=int, default=None,
-                    help='Rollout horizon [default: 100]')
+                    help="Rollout horizon. None used the max_horizon parameter"
+                         "value from the log directory.")
 parser.add_argument('--iteration', '-i', type=int, default=-1,
-                    help='Model iteration [default: last]')
+                    help="Model iteration. -1 for the last available episode")
 parser.add_argument('--gpu', type=int, default=-1,
-                    help='GPU ID [default: -1 (cpu)]')
+                    help='GPU ID. For using the cpu selects -1')
 parser.add_argument('--stochastic', action='store_true')
-parser.add_argument('--option', '-o', type=str, default=None,
-                    help='Script option [default: None]')
+# By default the script evaluates the last policy
+parser.set_defaults(script_option='e')
 
 n_rollouts = 0
+environment = None
 
 
-def plot_progress(progress_file, algo_name='hiusac'):
+def plot_progress(progress_file, algo_name='hiusac', only_expect_return=True):
+    """Plot relevant data from the training process logged in a file.
+    Args:
+        progress_file (str): Full path of the progress file.
+        algo_name (str): Algorithm name.
+
+    Returns:
+        None
+
+    """
     if algo_name in ['hiusac', 'hiusac-p']:
         num_intentions = 2
     else:
@@ -48,14 +87,28 @@ def plot_progress(progress_file, algo_name='hiusac'):
         progress_file,
         num_intentions=num_intentions,
     )
-    plots.plot_intentions_info(
-        progress_file,
-        num_intentions=num_intentions,
-    )
+    if not only_expect_return:
+        plots.plot_intentions_info(
+            progress_file,
+            num_intentions=num_intentions,
+        )
 
 
-def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False,
-                q_fcn=None):
+def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False):
+    """Evaluate a policy in a specific environment.
+
+    Args:
+        env (Env): Environment
+        policy (torch.nn.Module): Policy
+        max_horizon (int): Maximum horizon
+        task (int or None): Policy subtask
+        stochastic (bool): Select actions by sampling from the policy
+
+    Returns:
+        None
+
+    """
+
     rollout_info = rollout(
         env,
         policy,
@@ -63,10 +116,10 @@ def eval_policy(env, policy, max_horizon=50, task=None, stochastic=False,
         fixed_horizon=False,
         device='cpu',
         render=True,
+        return_info_dict=True,
+        record_video_name=None,
         intention=task,
         deterministic=not stochastic,
-        return_info=True,
-        q_fcn=q_fcn,
     )
     if task is None:
         rollout_return = sum(rollout_info['reward'])
@@ -95,7 +148,7 @@ def record_policy(env, policy, max_horizon=50, task=None, stochastic=False,
         device='cpu',
         render=True,
         intention=task, deterministic=not stochastic,
-        return_info=False,
+        return_info_dict=False,
         q_fcn=q_fcn,
         record_video_name=video_name,
     )
@@ -118,163 +171,143 @@ if __name__ == '__main__':
     # Parse and print out parameters
     args = parser.parse_args()
 
-    # Plot training data
+    # the full path of the log directory
     log_dir = args.log_dir
-    progress_file = osp.join(log_dir, 'progress.csv')
 
-    # Get environment from log directory
+    # Get experiment variant data from log directory
     with open(osp.join(log_dir, 'variant.json')) as json_data:
         log_data = json.load(json_data)
         env_name = log_data['env_name']
-        env_params = log_data['env_params']
+        log_env_params = log_data['env_params']
         algo_params = log_data['algo_params']
         seed = algo_params['seed']
         horizon = algo_params['max_horizon']
-    env, env_params = get_normalized_env(
-        env_name, args.task, args.seed, render=True, new_env_params=env_params
-    )
 
-    # Get models from file
+    progress_file = None
+    env = None
+    policy = None
+    env_params = None
+    run_once = True
+    models_dir = None
+    qf = None
+
+    # Get models directory
     itr_dir = 'itr_%03d' % args.iteration if args.iteration > -1 else 'last_itr'
     models_dir = osp.join(log_dir, 'models', itr_dir)
-    policy_file = osp.join(models_dir, 'policy.pt')
-    qf_file = osp.join(models_dir, 'qf1.pt')
-    policy = torch.load(policy_file, map_location=lambda storage, loc: storage)
-    qf = torch.load(qf_file, map_location=lambda storage, loc: storage)
 
-    options_dict = dict(
-        p="plot progress",
-        v="plot qval",
-        e="evaluate",
-        ie="evaluate infinite times!",
-        r="record interaction",
-        re="record and exit",
-        n="navigation2d",
-        t="change policy task",
-        i="change iteration",
-        et="change env task",
-        h="change evaluation horizon",
-        q="exit this script",
-    )
+    # Get the progress file
+    if args.script_option in ['p', 'pi']:
+        if progress_file is None:
+            progress_file = osp.join(log_dir, 'progress.csv')
 
-    options_txt = "Select an option: \n"
-    for key, val in options_dict.items():
-        options_txt += "\t%s: %s\n" % (key, val)
-    options_txt += "Option: "
+    # Get environment and policy
+    if args.script_option in ['e', 'er', 'v']:
+        env, env_params = get_env(
+            env_name, args.pol_task, args.seed, render=True,
+            new_env_params=log_env_params
+        )
 
-    infinite_loop = False
-    while True:
-        if args.option is None:
-            args.option = input(options_txt)
+        pol_file = osp.join(models_dir, 'policy.pt')
+        policy = torch.load(pol_file, map_location=lambda storage, loc: storage)
 
-        if args.option.lower() == 'q':
-            print("Closing the script. Bye!")
-            break
+        if args.horizon is not None:
+            horizon = args.horizon
 
-        elif args.option.lower() == 'p':
-            plot_progress(progress_file, log_data['algo_name'])
+    # Get Q-value function
+    if args.script_option in ['v']:
+        qf_file = osp.join(models_dir, 'qf1.pt')
+        qf = torch.load(qf_file, map_location=lambda storage, loc: storage)
 
-        elif args.option.lower() == 'v':
-            obs = np.zeros(env.obs_dim)
-            # TODO: Make this for all envs
-            obs[0] = -6
-            obs[1] = -6
-            plot_value_fcn(qf, policy, obs, env.action_space.low, env.action_space.high)
+    # Run the script with the selected option
+    if args.script_option == 'e':
+        eval_policy(env, policy,
+                    max_horizon=horizon,
+                    task=args.pol_task,
+                    stochastic=args.stochastic,
+                    )
 
-        elif args.option.lower() == 'e':
+    elif args.script_option == 'er':
+        try:
+            while True:
+                eval_policy(env, policy,
+                            max_horizon=horizon,
+                            task=args.pol_task,
+                            stochastic=args.stochastic,
+                            )
+        except KeyboardInterrupt:
+            pass
+
+    elif args.script_option == 'p':
+        plot_progress(progress_file, log_data['algo_name'],
+                      only_expect_return=True)
+
+    elif args.script_option == 'pi':
+        plot_progress(progress_file, log_data['algo_name'],
+                      only_expect_return=False)
+
+    elif args.script_option in ['r', 're']:
+        max_iter = 300
+        max_rollouts = 10
+        # range_list = list(range(0, max_iter, 25)) + [None]
+        range_list = [args.iteration]
+
+        env_subtask = None if args.env_task == -1 else args.env_task
+        env.set_active_subtask(env_subtask)
+
+        for rr in range(max_rollouts):
             if args.horizon is not None:
                 horizon = args.horizon
-            eval_policy(env, policy,
-                        max_horizon=horizon,
-                        task=args.task,
-                        stochastic=args.stochastic,
-                        q_fcn=qf,
-                        )
 
-        elif args.option.lower() == 't':
-            new_task = input("Specify task id (-1 for None). Task id: ")
-            new_task = int(new_task)
-            if new_task not in list(range(-1, policy.num_intentions)):
-                print("Wrong option '%s'!" % new_task)
-            args.task = None if new_task == -1 else new_task
-            print("New task is %d" % new_task)
+            if env_subtask is None:
+                env_subtask = -1
 
-        elif args.option.lower() == 'et':
-            new_task = input("Specify env_task id (-1 for None). Task id: ")
-            try:
-                new_task = int(new_task)
-            except ValueError:
-                print("Wrong option '%s'!. "
-                      "It is not possible to convert it to int" % new_task)
-            if new_task not in list(range(-1, env.n_subgoals)):
-                print("Wrong option '%s'!" % new_task)
+            if args.task is None:
+                subtask = -1
             else:
-                new_task = None if new_task == -1 else new_task
-                env.set_subtask(new_task)
+                subtask = args.task
 
-        elif args.option.lower() == 'h':
-            new_horizon = input("Specify new horizon: ")
-            new_horizon = int(new_horizon)
-            if not new_horizon > 1:
-                print("Wrong horizon '%d'!" % new_horizon)
-            else:
-                args.horizon = new_horizon
-                print("New horizon is %d" % new_horizon)
-
-        elif args.option.lower() in ['r', 're']:
-            max_iter = 300
-            max_rollouts = 10
-            # range_list = list(range(0, max_iter, 25)) + [None]
-            range_list = [args.iteration]
-
-            env_subtask = None if args.env_task == -1 else args.env_task
-            env.set_subtask(env_subtask)
-
-            for rr in range(max_rollouts):
-                if args.horizon is not None:
-                    horizon = args.horizon
-
-                if env_subtask is None:
-                    env_subtask = -1
-
-                if args.task is None:
-                    subtask = -1
-                else:
-                    subtask = args.task
-
-                video_name = (
-                        itr_dir +
-                        ('_s%03d' % seed) +
-                        ('_task%01d' % subtask) +
-                        ('_envtask%01d' % env_subtask) +
-                        ('_rollout%02d' % rr)
-                )
-                video_name = osp.join(
-                    env_name,
-                    video_name
-                )
-                record_policy(env, policy,
-                              max_horizon=horizon,
-                              task=subtask,
-                              stochastic=args.stochastic,
-                              q_fcn=qf,
-                              video_name=video_name,
-                              )
-                n_rollouts += 1
+            video_name = (
+                    itr_dir +
+                    ('_s%03d' % seed) +
+                    ('_task%01d' % subtask) +
+                    ('_envtask%01d' % env_subtask) +
+                    ('_rollout%02d' % rr)
+            )
+            video_name = osp.join(
+                env_name,
+                video_name
+            )
+            record_policy(env, policy,
+                          max_horizon=horizon,
+                          task=subtask,
+                          stochastic=args.stochastic,
+                          q_fcn=qf,
+                          video_name=video_name,
+                          )
+            n_rollouts += 1
 
             if args.option.lower() == 're':
-                args.option = 'q'
-                infinite_loop = True
+                break
 
-        elif args.option.lower() == 'n':
-            plots.plot_navitation2d()
+    elif args.script_option == 'v':
+        obs = np.zeros(env.obs_dim)
+        # TODO: Make this for all envs
+        obs[0] = -6
+        obs[1] = -6
+        plot_value_fcn(qf, policy, obs, env.action_space.low, env.action_space.high)
 
-        elif args.option.lower() == 'ie':
-            args.option = 'e'
-            infinite_loop = True
-        else:
-            print("Wrong option!")
+    # # Menu option
+    # print("Available options:")
+    # for arg in vars(args):
+    #     print('\t%s: %s' % (arg, getattr(args, arg)))
+    #     if arg == 'script_option':
+    #         for (option, _, description) in options_choices:
+    #             print("\t  %s: %s" % (option, description))
+    # print('or')
+    # print('\t%s: %s' % ('q', "Close the script"))
+    # user_option = input('Select an option:')
 
-        if not infinite_loop:
-            args.option = None
-
+    if args.script_option in ['p', 'pi']:
+        input('Press a key to close the script')
+    else:
+        print("Closing the script. Bye!")
