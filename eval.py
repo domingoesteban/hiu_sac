@@ -16,21 +16,7 @@ VIDEOS_DIR = 'videos'
 # Numpy print options
 np.set_printoptions(precision=3, suppress=True)
 
-# # Script options
-# options_dict = dict(
-#     e="evaluate",
-#     ie="evaluate infinite times!",
-#     p="plot progress",
-#     v="plot qval",
-#     r="record interaction",
-#     re="record and exit",
-#     n="navigation2d",
-#     t="Change policy task",
-#     i="Change iteration",
-#     et="change env task",
-#     h="change evaluation horizon",
-#     q="exit this script",
-# )
+# Script options
 options_choices = [
     ('e', 'evaluate', "Evaluate the policy"),
     ('p', 'plot', "Plot the expected return from the learning process"),
@@ -295,17 +281,6 @@ if __name__ == '__main__':
         obs[0] = -6
         obs[1] = -6
         plot_value_fcn(qf, policy, obs, env.action_space.low, env.action_space.high)
-
-    # # Menu option
-    # print("Available options:")
-    # for arg in vars(args):
-    #     print('\t%s: %s' % (arg, getattr(args, arg)))
-    #     if arg == 'script_option':
-    #         for (option, _, description) in options_choices:
-    #             print("\t  %s: %s" % (option, description))
-    # print('or')
-    # print('\t%s: %s' % ('q', "Close the script"))
-    # user_option = input('Select an option:')
 
     if args.script_option in ['p', 'pi']:
         input('Press a key to close the script')
