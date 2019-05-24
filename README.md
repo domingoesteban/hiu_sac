@@ -4,7 +4,7 @@ Soft Actor-Critic (HIU-SAC) algorithm
 
 This repository contains the source code used for the experiments conducted
 in the paper:
-<a href="https://domingoesteban.com" target="_blank">
+<a href="https://arxiv.org/abs/1905.09668" target="_blank">
 *Hierarchical reinforcement learning for concurrent discovery of compound and 
 composable policies*</a>
 
@@ -12,7 +12,10 @@ The algorithm has been tested on continuous control tasks in
 <a href="https://github.com/domingoesteban/robolearn_envs" target="_blank">
 RoboLearn environments</a>. 
 
-Code has been tested with PyTorch 1.0.1 and Python 3.5 (or later).
+Some videos can be found at <a href="https://sites.google.com/view/hrl-concurrent-discovery" target="_blank">
+*https://sites.google.com/view/hrl-concurrent-discovery*</a>
+
+The code has been tested with PyTorch 1.0.1 and Python 3.5 (or later).
 
 ## Pre-Installation
 It is recommended to first create either a virtualenv or a conda environment.
@@ -49,15 +52,21 @@ pip install -r requirements.txt
 
 ## Use
 
-- Run HIU-SAC in the reacher environment.
+- Run HIU-SAC in one of the environments. Options: navigation2d, reacher, pusher, centauro
 
 ```bash
 # python train.py -e <env_name>
-python train.py -e reacher
+python train.py -e navigation2d
 ```
 
-- Evaluate the results (Specify the log directory that is printed during the learning process)
+- Visualize the learned policy (Specify the log directory that is printed during the learning process)
 
 ```bash
 python eval.py <path_to_log_directory>
+```
+
+- Plot the learning curves in the composable and compound tasks (Specify the log directory that is printed during the learning process)
+
+```bash
+python eval.py <path_to_log_directory> -p
 ```

@@ -5,4 +5,4 @@ joblib
 gtimer
 pandas
 tqdm
-git+git://github.com/domingoesteban/robolearn_envs@master#egg=robolearn_envs
+git+git://github.com/domingoesteban/robolearn_envs@hiusac#egg=robolearn_envs
