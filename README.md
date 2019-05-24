@@ -4,7 +4,7 @@ Soft Actor-Critic (HIU-SAC) algorithm
 
 This repository contains the source code used for the experiments conducted
 in the paper:
-<a href="https://arxiv.org/abs/1905.09668" target="_blank">
+<a href="https://arxiv.org/pdf/1905.09668.pdf" target="_blank">
 *Hierarchical reinforcement learning for concurrent discovery of compound and 
 composable policies*</a>
 
