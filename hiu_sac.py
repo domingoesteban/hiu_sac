@@ -441,7 +441,7 @@ class HIUSAC(object):
             # Fancy iterable bar
             episodes_iter = tqdm.tqdm(episodes_iter)
 
-        for iter in gt.timed_for(episodes_iter, save_itrs=True):
+        for it in gt.timed_for(episodes_iter, save_itrs=True):
             # Put models in training mode
             for model in self.trainable_models:
                 model.train()
@@ -478,7 +478,7 @@ class HIUSAC(object):
                     obs = interaction_info['next_obs']
 
             # Evaluate current policy to check performance
-            expected_accum_rewards[iter] = self.eval()
+            expected_accum_rewards[it] = self.eval()
 
             # Log the episode data
             self.log()
@@ -491,7 +491,7 @@ class HIUSAC(object):
         """Evaluate deterministically the HIU policy.
 
         Returns:
-            np.array: Expected accumulated reward
+            float: Expected accumulated reward
 
         """
         # Put models in evaluation mode

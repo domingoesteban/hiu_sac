@@ -70,3 +70,13 @@ python eval.py <path_to_log_directory>
 ```bash
 python eval.py <path_to_log_directory> -p
 ```
+
+## Citation
+If this repository was useful for your research, we would appreciate that you can cite it:
+
+    @article{esteban2019hiusac,
+      title={Hierarchical Reinforcement Learning for Concurrent Discovery of Compound and Composable Policies},
+      author={Domingo Esteban and Leonel Rozo and Darwin G. Caldwell},
+      journal={arXiv preprint arXiv:1905.09668},
+      year={2019}
+    }
